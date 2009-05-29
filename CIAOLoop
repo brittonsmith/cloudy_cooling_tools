@@ -10,11 +10,15 @@
 #####################################################################
 
 # Version
-my $version = "1.9";
+my $version = "1.10";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+### 1.10 - 3-23-09 - Get hden/eden from physical       ###
+###                  conditions punch.  Add option to  ###
+###                  scale cooling with (n_e * n_H).   ###
+###                  Removed H2 table functionality.   ###
 ###                                                    ###
 ### 1.9 - 8-8-08 - Changed checkForCrash routine to    ###
 ###                work with Cloudy 08.                ###
@@ -257,14 +261,10 @@ my $coolingMapTpoints;
 # temperature values for cooling map
 my @coolingMapTemperatures;
 
-# flag to use premade H2 fraction table
-my $coolingMapH2FractionTableFile;
-
-# H2 fraction below which H2 molecule will not be included
-my $coolingMapH2FractionCritical = 2e-5;
-
-# H2 fraction table data
-my %coolingMapH2FractionTable;
+# scaling of cooling values
+# 1: n_H^2
+# 2: n_H * n_e
+my $coolingScaleFactor = 1;
 
 # decimal precision for temperature in cooling maps
 my $temperaturePrecision = 6;
@@ -917,17 +917,15 @@ sub readParameterFile {
 	  $coolingMapTpoints = $value;
       }
 
-      # get H2 fraction table file
-      elsif ($line =~ /^coolingMapH2FractionTableFile(\z|[\s\=])/i) {
+      # get cooling scale factor flag
+      elsif ($line =~ /coolingScaleFactor(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
-	  my @values = glob($value);
-	  $coolingMapH2FractionTableFile = $values[0];
-	  die "Can not find coolingMapH2FractionTableFile: $coolingMapH2FractionTableFile, from line $lineNumber of $parameterFile.\n"
-	      unless (-e $coolingMapH2FractionTableFile);
+	  die "No value given for coolingScaleFactor on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  $coolingScaleFactor = $value;
       }
-
 
       ######################################
       ### Emissivity Map Mode Parameters ###
@@ -1560,7 +1558,8 @@ sub checkForCrash {
     # Cloudy versions 07.02 and earlier.
     ## if (!($lines[-1] =~ /Stop in maincl/) || ($lines[-1] =~ /return value is 1/)) {
     # Cloudy versions 08 and later.
-    if (!($lines[-1] =~ /Stop in main at maincl/) || ($lines[-1] =~ /return value is 1/)) {
+    if (!($lines[-1] =~ /Cloudy exited OK/) || 
+	($lines[-1] =~ /return value is 1/)) {
 	$cloudyCrashed = 1;
 
 	# don't exit if running in parallel
@@ -1705,11 +1704,6 @@ sub bareMode {
 ##                               range is defined properly and 
 ##                               creates temperature list.
 ##
-##    readH2FractionTable - reads in external H2 fraction table.
-##
-##    getH2FractionTable - returns H2 fraction table for specific 
-##                         gas density.
-##
 ##    getCooling - retrieves total heating and cooling from Cloudy 
 ##                 ouput file created with the 'punch cooling' 
 ##                 command which is automatically given in cooling 
@@ -1749,6 +1743,7 @@ sub coolingMapMode {
     my $heatingFile = $keyName . ".heating";
     my $abundanceFile = $keyName . ".abundance";
     my $ionizationFile = $keyName . ".ionization";
+    my $physicalConditionsFile = $keyName . ".physical";
     my $warningFile = $keyName . ".warnings";
     my $dataOutputFile = $keyName . ".dat";
 
@@ -1762,6 +1757,7 @@ sub coolingMapMode {
 	$coolingFile,
 	$abundanceFile,
 	$ionizationFile,
+	$physicalConditionsFile,
 	$warningFile,
 	$dataOutputFile;
     }
@@ -1791,24 +1787,55 @@ sub coolingMapMode {
       }
   }
 
-    # find density value hidden in commands
+    # find h density value hidden in commands
     my $hden;
   FIND: foreach my $command (@commands) {
       if ($command =~ /^hden /) {
-	  $hden = $command;
-	  $hden =~ s/hden//;
-	  $hden =~ s/\s//g;
-	  if ($hden =~ /linear/) {
-	      $hden = log($hden)/log(10);
-	  }
-	  last FIND;
+	$hden = $command;
+	$hden =~ s/hden//;
+	if ($hden =~ /linear/) {
+	  $hden =~ s/linear//;
+	}
+	elsif ($hden =~ /log/) {
+	  $hden =~ s/log//;
+	  $hden = 10**$hden;
+	}
+	else {
+	  $hden = 10**$hden;
+	}
+	last FIND;
       }
-  }
+    }
 
-    # if using H2 fraction table, get the one corresponding to this density
-    my @H2Table;
-    if ($coolingMapH2FractionTableFile) {
-	@H2Table = getH2FractionTable($hden);
+    # find metallicity value hidden in commands
+    my $metals;
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^metals /) {
+	$metals = $command;
+	$metals =~ s/metals//;
+	if ($metals =~ /linear/) {
+	  $metals =~ s/linear//;
+	}
+	elsif ($metals =~ /log/) {
+	  $metals =~ s/log//;
+	  $metals = 10**$metals;
+	}
+	last FIND;
+      }
+    }
+
+    # find command to specify electron fraction (not an actual cloudy command)
+    my $electronFractionCommand;
+    my $electronFactor = 9.153959e-3;
+    my $hydrogenMassFraction = 10. / 14.;
+    my $electronMetalFreeMax = (1 + $hydrogenMassFraction) / (2 * $hydrogenMassFraction);
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^metal free electron fraction (.+)$/) {
+	my $electronFraction = $1;
+	my $electronDensity = $electronFraction + log(($electronMetalFreeMax + ($electronFactor * $metals)) * $hden) / log(10);
+	$command = "set eden $electronDensity\n";
+	last FIND;
+      }
     }
 
     # temporary files
@@ -1818,6 +1845,7 @@ sub coolingMapMode {
     my $tempHeatingFile = $heatingFile . $tempFileSuffix;
     my $tempAbundanceFile = $abundanceFile . $tempFileSuffix;
     my $tempIonizationFile = $ionizationFile . $tempFileSuffix;
+    my $tempPhysicalConditionsFile = $physicalConditionsFile . $tempFileSuffix;
 
     # find user specified files hidden in commands and add temp suffix to their names
     foreach my $command (@commands) {
@@ -1864,75 +1892,25 @@ sub coolingMapMode {
 	}
 
 	# add cooling map mode commands
-	push @runCommands, "punch cooling file = \"$tempCoolingFile\"\n";
-	push @runCommands, "punch heating file = \"$tempHeatingFile\"\n";
-	push @runCommands, "punch abundance file = \"$tempAbundanceFile\"\n";
-	push @runCommands, "punch ionization means file = \"$tempIonizationFile\"\n";
-
-	# get H2 fraction from table, if used
-	my $H2Fraction = sprintf "%f", shift @H2Table if ($coolingMapH2FractionTableFile);
-
+	push @runCommands, "punch last cooling file = \"$tempCoolingFile\"\n";
+	push @runCommands, "punch last heating file = \"$tempHeatingFile\"\n";
+	push @runCommands, "punch last abundance file = \"$tempAbundanceFile\"\n";
+	push @runCommands, "punch last ionization means file = \"$tempIonizationFile\"\n";
+	push @runCommands, "punch last physical conditions file = \"$tempPhysicalConditionsFile\"\n";
 
 	# run Cloudy once or twice, depending on below
 	my $cloudyCrashed = 0;
 	my @warnings = ();
 
-	my $cloudyRepeat = 2;
-	my $H2cooling = 0;
-	my $H2heating = 0;
-	while ($cloudyRepeat) {
+	# run Cloudy and get warnings and crash flag
+	($cloudyCrashed,@warnings) = &runCloudy($tempInputFile,$tempOutputFile,@runCommands);
 
-	    # add value from H2 fraction table, if used
-	    if ($coolingMapH2FractionTableFile) {
-		if ($H2Fraction > $coolingMapH2FractionCritical) {
-		    if ($cloudyRepeat == 2) {
-			push @runCommands, "set H2 fraction $H2Fraction\n";
-			$cloudyRepeat = 1;
-		    }
-		    else {
-			pop @runCommands;
-			push @runCommands, "no H2 molecules\n";
-			$cloudyRepeat = 0;
-		    }
-		}
-		else {
-		    push @runCommands, "no H2 molecules\n";
-		    $cloudyRepeat = 0;
-		}
-	    }
-
-	    # not using H2 fraction table, just run once
-	    else {
-		$cloudyRepeat = 0;
-	    }
-
-	    # run Cloudy and get warnings and crash flag
-	    ($cloudyCrashed,@warnings) = &runCloudy($tempInputFile,$tempOutputFile,@runCommands);
-
-	    # if there were warnings, add them to a file
-	    if (@warnings) {
-		open (WARN, ">>$warningFile") or die "Couldn't open $warningFile to add warnings.\n";
-		printf WARN "## Warnings produced for T = %.3e.\n", $temperature;
-		print WARN @warnings;
-		close (WARN);
-	    }
-
-	    # get H2 cooling contribution
-	    if ($coolingMapH2FractionTableFile && $cloudyRepeat) {
-		if ($cloudyCrashed) {
-		    printf "Cloudy crashed getting H2 cooling for T = %.3e of run $currentRunIndex.  If this continues, think about exiting.\n", $temperature;
-		}
-		else {
-		    $H2cooling = &getCoolingContribution($tempCoolingFile,"H2ln");
-		    $H2heating = &getHeatingContribution($tempHeatingFile,"H2dH");
-		}
-		&pushFile($inputFile,$tempInputFile,(sprintf "## Input for T = %.3e.\n", $temperature));
-		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output for T = %.3e.\n", $temperature));
-		&pushFile($coolingFile,$tempCoolingFile,(sprintf "## Cooling punch for T = %.3e.\n", $temperature));
-		&pushFile($heatingFile,$tempHeatingFile,(sprintf "## Heating punch for T = %.3e.\n", $temperature));
-
-	    }
-
+	# if there were warnings, add them to a file
+	if (@warnings) {
+	    open (WARN, ">>$warningFile") or die "Couldn't open $warningFile to add warnings.\n";
+	    printf WARN "## Warnings produced for T = %.3e.\n", $temperature;
+	    print WARN @warnings;
+	    close (WARN);
 	}
 
 	# warn if there was a crash
@@ -1949,16 +1927,27 @@ sub coolingMapMode {
 
 	# if no crash, get the stuff we want
 	else {
+	    # get H and e- number density
+	    my ($hden,$eden) = &getPhysicalConditions($tempPhysicalConditionsFile);
+
 	    # get heating and cooling
 	    my ($heating,$cooling) = &getCooling($tempCoolingFile);
 
-	    # divide heating and cooling by n^2
-	    $heating /= 10**(2*$hden);
-	    $cooling /= 10**(2*$hden);
+	    # scale heating and cooling values
+	    my $scaleFactor;
+	    if ($coolingScaleFactor == 1) {
+		$scaleFactor = $hden * $hden;
+	    }
+	    elsif ($coolingScaleFactor == 2) {
+		$scaleFactor = $hden * $eden;
+	    }
+	    else {
+		die "Error: coolingScaleFactor must be either 1 or 2.\n";
+	    }
 
-	    # add H2 contribution, if calculated separately
-	    $cooling += $H2cooling/(10**(2*$hden)) if ($H2cooling);
-	    $heating += $H2heating/(10**(2*$hden)) if ($H2heating);
+	    # divide heating and cooling by n^2
+	    $heating /= $scaleFactor;
+	    $cooling /= $scaleFactor;
 
 	    # get ionization fractions
 	    # take molecules into account some day
@@ -1979,6 +1968,7 @@ sub coolingMapMode {
 		&pushFile($heatingFile,$tempHeatingFile,(sprintf "## Heating punch for T = %.3e.\n", $temperature));
 		&pushFile($abundanceFile,$tempAbundanceFile,(sprintf "## Abundance punch for T = %.3e.\n", $temperature));
 		&pushFile($ionizationFile,$tempIonizationFile,(sprintf "## Ionization punch for T = %.3e.\n", $temperature));
+		&pushFile($physicalConditionsFile,$tempPhysicalConditionsFile,(sprintf "## Physical conditions punch for T = %.3e.\n", $temperature))
 	    }
 
 	    # append user specified output files
@@ -1995,7 +1985,8 @@ sub coolingMapMode {
     $tempCoolingFile,
     $tempHeatingFile,
     $tempAbundanceFile,
-    $tempIonizationFile;
+    $tempIonizationFile,
+    $tempPhysicalConditionsFile;
 
     # delete user specified temp files
     foreach my $userFile (@userFiles) {
@@ -2006,18 +1997,13 @@ sub coolingMapMode {
 
 #####################################################################
 ##################### coolingMapModeInitialize ######################
-# Initialize cooling map mode by loading atomic mass data, reading in external H2
-# fraction table, and creating temperature list.
+# Initialize cooling map mode by loading atomic mass data and 
+# creating temperature list.
 
 sub coolingMapModeInitialize {
 
     # load atomic mass data for mean molecular weight calculation
     &loadMassData();
-
-    # load H2 fraction table, if specified
-    if ($coolingMapH2FractionTableFile) {
-	%coolingMapH2FractionTable = &readH2FractionTable($coolingMapH2FractionTableFile);
-    }
 
     # check temperature settings for sanity
     die "coolingMapdT and coolingMapdLogT cannot both be set.\n"
@@ -2073,20 +2059,7 @@ sub coolingMapModeInitialize {
     my $temperature = $coolingMapTmin;
     my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+0.5*$coolingMapdT : $coolingMapTmax*(10**(0.5*$coolingMapdLogT));
 
-    my @H2FractionTemperatures;
-    if ($coolingMapH2FractionTableFile) {
-	@H2FractionTemperatures = @{$coolingMapH2FractionTable{te}};
-    }
-
     while ($temperature < $endingCriterion) {
-
-	# check that temperature match H2 fraction table, if used
-	if ($coolingMapH2FractionTableFile) {
-	    my $H2FractionTemperature = shift @H2FractionTemperatures;
-	    if (abs($temperature-$H2FractionTemperature)/$temperature > .001) {
-		die "Temperatures of H2 fraction table do not match cooling map temperatures.\n";
-	    }
-	}
 
 	push @coolingMapTemperatures, (sprintf "%.6e",$temperature);
 
@@ -2098,64 +2071,6 @@ sub coolingMapModeInitialize {
 	    $temperature *= 10**$coolingMapdLogT;
 	}
     }
-}
-
-#####################################################################
-####################### readH2FractionTable #########################
-# Read external H2 fraction table, if specified in parameter file with 
-# coolingMapH2FractionTableFile option.
-# Data is stored in a hash where 'te' key points to array of temperatures, 
-# and 'data' key points to another hash containing the H2 fraction tables.
-# Inside the 'data' hash, the keys are the log of the number density.
-
-sub readH2FractionTable {
-    my ($tableFile) = @_;
-
-    # data stored in a hash
-    my %data = ();
-
-    # keep temperatures here
-    @{$data{te}} = ();
-
-    open (H2, "<$tableFile") or die "Couldn't open $tableFile to get H2 fraction table.\n";
-
-    my $firstLine = <H2>;
-    chomp $firstLine;
-    my @hdens = split /\t/, $firstLine;
-    shift @hdens;
-
-    while (my $line = <H2>) {
-	chomp $line;
-	my @contents = split /\t/, $line;
-	push @{$data{te}}, shift @contents;
-	for (my $q = 0;$q < @hdens;$q++) {
-	    push @{$data{data}{$hdens[$q]}}, $contents[$q];
-	}
-    }
-
-    close (H2);
-
-    # return data structure
-    return %data;
-}
-
-#####################################################################
-####################### getH2FractionTable ##########################
-# Search through H2 fraction data structure for table for requested density 
-# and return array of H2 fractions for that density.
-
-sub getH2FractionTable {
-    my ($hden) = @_;
-
-    foreach my $tableDen (keys %{$coolingMapH2FractionTable{data}}) {
-	if ($hden == $tableDen) {
-	    # If the density matches, return that array.
-	    return @{$coolingMapH2FractionTable{data}{$tableDen}};
-	}
-    }
-
-    # Exit if the density requested is not available in the table.
-    die "Couldn't find H2 fraction table to match $hden.\n";
 }
 
 #####################################################################
@@ -2230,6 +2145,22 @@ sub getHeatingContribution {
     return ($heating);
 }
 
+#####################################################################
+###################### getPhysicalConditions ########################
+# Parse through Cloudy output file made with 'punch physical 
+# conditions' command and return H density and electron density.
+
+sub getPhysicalConditions {
+    my ($physicalConditionsFile) = @_;
+    open (PHYS, "<$physicalConditionsFile") or die 
+	"Couldn't open $physicalConditionsFile to get physicalConditions.\n";
+    my @lines = <PHYS>;
+    close (PHYS);
+
+    my @onLine = split /\t/, $lines[-1];
+
+    return ($onLine[2],$onLine[3]);
+}
 
 #####################################################################
 ####################### getMeanMolecularWeight ######################
