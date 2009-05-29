@@ -10,11 +10,18 @@
 #####################################################################
 
 # Version
-my $version = "1.10";
+my $version = "1.11";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.11 - 4-8-09 - Changed command line flags to make ###
+###                 a bit more sense.                  ###
+###                 -mp => -np (number of processors)  ###
+###                 -p  => -m (machine name)           ###
+###                 -m  => -mp (multiple parts)        ###
+###                                                    ###
 ### 1.10 - 3-23-09 - Get hden/eden from physical       ###
 ###                  conditions punch.  Add option to  ###
 ###                  scale cooling with (n_e * n_H).   ###
@@ -349,29 +356,29 @@ while (my $arg = shift @ARGV) {
 
 
     # run in parallel
-    elsif ($arg =~ /^-p$/) {
+    elsif ($arg =~ /^-m$/) {
 	$parallel = 1;
 	$machineFile = glob(shift @ARGV);
 	die "Machine file $machineFile does not exist.\n" unless (-e $machineFile);
     }
 
     # run in parts
-    elsif ($arg =~ /^-m$/) {
+    elsif ($arg =~ /^-mp$/) {
 	$multiParts = 1;
 	$thisMultiPart = shift @ARGV;
-	die "First argument after -m flag must be a positive integer.\n" if ($thisMultiPart =~ /\D/);
+	die "First argument after -mp flag must be a positive integer.\n" if ($thisMultiPart =~ /\D/);
 	$totalMultiParts = shift @ARGV;
-	die "Second argument after -m flag must be a positive integer.\n" if ($totalMultiParts =~ /\D/);
+	die "Second argument after -mp flag must be a positive integer.\n" if ($totalMultiParts =~ /\D/);
 	die "Multipart arguments cannot be zero.\n" if (($thisMultiPart == 0) || ($totalMultiParts == 0));
 	die "First argument must be less than or equal to second.\n" if ($thisMultiPart > $totalMultiParts);
     }
 
     # run on multiprocessor machine
-    elsif ($arg =~ /^-mp$/) {
+    elsif ($arg =~ /^-np$/) {
 	$multiProcessor = 1;
 	$parallel = 1;
 	$numberMultiProcessors = shift @ARGV;
-	die "Argument after -mp flag should be a positive integer.\n" if (($numberMultiProcessors =~ /\D/) || 
+	die "Argument after -np flag should be a positive integer.\n" if (($numberMultiProcessors =~ /\D/) || 
 									  ($numberMultiProcessors <= 0));
     }
 
@@ -1987,6 +1994,9 @@ sub coolingMapMode {
     $tempAbundanceFile,
     $tempIonizationFile,
     $tempPhysicalConditionsFile;
+
+    # delete Cloudy input/output files
+    unlink $inputFile,$outputFile;
 
     # delete user specified temp files
     foreach my $userFile (@userFiles) {
