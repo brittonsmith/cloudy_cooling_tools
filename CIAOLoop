@@ -10,11 +10,16 @@
 #####################################################################
 
 # Version
-my $version = "1.5.1";
+my $version = "1.6";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.6 - 10-31-07 - Added new run mode, 2, for        ###
+###                  creating maps of luminosity as a  ###
+###                  function of temperature and       ###
+###                  energy.
 ###                                                    ###
 ### 1.5.1 - 8-14-07 - Changed read of cooling punch    ###
 ###                   output to account for changes    ###
@@ -86,21 +91,24 @@ $| = 1;
 ###      A. General Subroutines                        ###
 ###      B. Bare Mode Subroutine                       ###
 ###      C. Cooling Map Mode Subroutines               ###
-###      D. Custom Cloudy Mode Subroutines             ###
+###      D. Emissivity Map Mode Subroutines            ###
+###      E. Custom Cloudy Mode Subroutines             ###
 ###                                                    ###
 ##########################################################
 ##########################################################
 ##########################################################
 
 # Modes for running Cloudy.
-my @cloudyRunModes = (\&bareMode,        # bare mode (just run Cloudy with commands provided)
-		      \&coolingMapMode,  # cooling map mode
-		      \&newCustomMode);  # Your custom run mode here!
+my @cloudyRunModes = (\&bareMode,          # bare mode (just run Cloudy with commands provided)
+		      \&coolingMapMode,    # cooling map mode
+		      \&emissivityMapMode, # emissivity map mode
+		      \&newCustomMode);    # Your custom run mode here!
 
 # Initialization routines for the above running modes.
-my @initializeMode = (0,                           # no initialization required for bare mode
-		      \&coolingMapModeInitialize,  # set temperature ranges
-		      \&newCustomModeIntialize);   # Your custom mode initialization routine.
+my @initializeMode = (0,                             # no initialization required for bare mode
+		      \&coolingMapModeInitialize,    # set temperature ranges
+		      \&emissivityMapModeInitialize, # set temperature, energy ranges
+		      \&newCustomModeIntialize);     # Your custom mode initialization routine.
 
 #####################################################################
 ################# Parameters and Global Variables ###################
@@ -236,16 +244,54 @@ my %coolingMapH2FractionTable;
 my $temperaturePrecision = 6;
 
 # decimal precision for heating in cooling maps
-my $heatingPrecision = 12;
+my $heatingPrecision = 6;
 
 # decimal precision for cooling in cooling maps
-my $coolingPrecision = 12;
+my $coolingPrecision = 6;
 
 # decimal precision for mean molecular weight in cooling maps
 my $mmwPrecision = 6;
 
 # atomic weights used for calculating mean molecular weights
 my @mass = ();
+
+#####################################################################
+########### Emissivity Map Mode Parameters and Variables ############
+#####################################################################
+
+# Minimum energy for emissivity map
+my $emissivityMapEmin;
+
+# Maximum energy for emissivity map
+my $emissivityMapEmax;
+
+# Linear energy step for emissivity map
+my $emissivityMapdE;
+
+# Log energy step for emissivity map
+my $emissivityMapdLogE;
+
+# Number of energy points for emissivity map
+my $emissivityMapEpoints;
+
+# Energy units for emissivity map
+my $emissivityMapEnergyUnits = "Rydbergs";
+
+# Flag for log energy bins
+my $emissivityMapLogEnergyBins;
+
+# Energy values for emissivity map
+my @emissivityMapEnergies;
+
+# Decimal precision for emissivity in emissivity maps
+my $emissivityPrecision = 6;
+
+# Energy units conversion hash
+# conversions to Hz
+my %energyConversion = ('MHz'  =>     1e-6,
+			'eV'   =>     4.1356668e-15,
+			'keV'  =>     4.1356668e-18,
+			'Rydbergs' => 3.04093147e-16);
 
 #####################################################################
 #################### Command Storage Objects ########################
@@ -597,9 +643,9 @@ sub readParameterFile {
       }
 
 
-      ##################################
-      ###### Commands For Cloudy #######
-      ##################################
+      ######################################
+      ######## Commands For Cloudy #########
+      ######################################
 
       # get Cloudy command to be executed every time
       elsif ($line =~ /^command(\z|[\s\=])/i) {
@@ -780,9 +826,9 @@ sub readParameterFile {
       } # end loop command
 
 
-      ##################################
-      ## Cooling Map Mode Parameters ###
-      ##################################
+      ######################################
+      #### Cooling Map Mode Parameters #####
+      ######################################
 
       # cooling map mode options
       # get minimum temperature
@@ -814,9 +860,9 @@ sub readParameterFile {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
-	  die "No dt given on line $lineNumber of $parameterFile.\n"
+	  die "No dT given on line $lineNumber of $parameterFile.\n"
 	      unless ($value);
-	  die "Invalid dt given on line $lineNumber of $parameterFile.\n"
+	  die "Invalid dT given on line $lineNumber of $parameterFile.\n"
 	      if ($value < 0);
 	  $coolingMapdT = $value;
       }
@@ -826,9 +872,9 @@ sub readParameterFile {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
-	  die "No dt given on line $lineNumber of $parameterFile.\n"
+	  die "No dT given on line $lineNumber of $parameterFile.\n"
 	      unless ($value);
-	  die "Invalid dt given on line $lineNumber of $parameterFile.\n"
+	  die "Invalid dT given on line $lineNumber of $parameterFile.\n"
 	      if ($value < 0);
 	  $coolingMapdLogT = $value;
       }
@@ -838,9 +884,9 @@ sub readParameterFile {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
-	  die "No value given for tsteps on line $lineNumber of $parameterFile.\n"
+	  die "No value given for Tsteps on line $lineNumber of $parameterFile.\n"
 	      unless ($value);
-	  die "Invalid value given for tsteps on line $lineNumber of $parameterFile.\n"
+	  die "Invalid value given for Tsteps on line $lineNumber of $parameterFile.\n"
 	      if ($value < 0);
 	  $coolingMapTpoints = $value;
       }
@@ -854,6 +900,92 @@ sub readParameterFile {
 	  $coolingMapH2FractionTableFile = $values[0];
 	  die "Can not find coolingMapH2FractionTableFile: $coolingMapH2FractionTableFile, from line $lineNumber of $parameterFile.\n"
 	      unless (-e $coolingMapH2FractionTableFile);
+      }
+
+
+      ######################################
+      ### Emissivity Map Mode Parameters ###
+      ######################################
+
+      # emissivity map mode options
+      # get minimum energy
+      elsif ($line =~ /emissivityMapEmin(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No minimum energy given on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  die "Invalid minimum energy given on line $lineNumber of $parameterFile.\n"
+	      if ($value < 0);
+	  $emissivityMapEmin = $value;
+      }
+
+      # get maximum energy
+      elsif ($line =~ /emissivityMapEmax(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No maximum energy given on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  die "Invalid maximum energy given on line $lineNumber of $parameterFile.\n"
+	      if ($value < 0);
+	  $emissivityMapEmax = $value;
+      }
+
+      # get emissivityMapdE (energy step size)
+      elsif ($line =~ /emissivityMapdE(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No dE given on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  die "Invalid dE given on line $lineNumber of $parameterFile.\n"
+	      if ($value < 0);
+	  $emissivityMapdE = $value;
+      }
+
+      # get dLogE (energy step size)
+      elsif ($line =~ /emissivityMapdLogE(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No dE given on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  die "Invalid dE given on line $lineNumber of $parameterFile.\n"
+	      if ($value < 0);
+	  $emissivityMapdLogE = $value;
+      }
+
+      # get number of energy steps
+      elsif ($line =~ /emissivityMapEpoints(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No value given for Esteps on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  die "Invalid value given for Esteps on line $lineNumber of $parameterFile.\n"
+	      if ($value < 0);
+	  $emissivityMapEpoints = $value;
+      }
+
+      # get energy units
+      elsif ($line =~ /emissivityMapEnergyUnits(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;	  
+	  die "No value given for energy units on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  $emissivityMapEnergyUnits = $value;
+      }
+
+      # get log energy bin flag
+      elsif ($line =~ /emissivityMapLogEnergyBins(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;	  
+	  die "emissivityMapLogEnergyBins must be either 0 or 1 on line $lineNumber of $parameterFile.\n"
+	      unless (($value == 0) || ($value == 1));
+	  $emissivityMapLogEnergyBins = $value;
       }
 
       else {
@@ -1535,6 +1667,10 @@ sub bareMode {
 ##                     external H2 fraction table with the 
 ##                     coolingMapH2FractionTableFile parameter in 
 ##                     the parameter file.
+##                     Update: I never use the H2 fraction tables.
+##                     Instead, I simply create a normal cooling 
+##                     grid and one with H/He only and subtract the
+##                     two to make metals-only cooling grids.
 ##
 ##    coolingMapModeInitialize - initializes cooling map mode.
 ##                               Loads atomic weight data for mmw 
@@ -1869,7 +2005,7 @@ sub coolingMapModeInitialize {
 	int(defined($coolingMapTpoints));
 
     die "Temperature loop overdefined: set only three values.\n"
-	if ($TValuesSet == 4);
+	if ($TValuesSet > 3);
 
     die "Temperature loop not defined properly for cooling map mode.\n"
 	if ($TValuesSet < 3);
@@ -2188,6 +2324,449 @@ sub loadMassData {
     $mass[27] = 58.6934;
     $mass[28] = 63.546;
     $mass[29] = 65.409;
+}
+
+#####################################################################
+#####################################################################
+#####################################################################
+
+
+#####################################################################
+################## Emissivity Map Mode Subroutines ##################
+#####################################################################
+## These subroutines can be used as a template to create new custom 
+## Cloudy running modes.
+##
+## CONTENTS ##
+##
+##    emissivityMapMode - similar to cooling map mode.  Loops over
+##                        both temperature and energy to create
+##                        maps of luminosity for the given loop
+##                        parameters.
+##
+##    emissivityMapModeInitialize - calls coolingMapModeInitialize 
+##                                  to set up temperature bins, 
+##                                  then does something similar to 
+##                                  set up energy bins.
+##
+##    getInterpolatedContinuum - takes continuum output by Cloudy,
+##                               which comes in a mesh whose range
+##                               cannot be altered, then uses
+##                               linear interpolation to create
+##                               a continuum over the user specified
+##                               range.
+##
+##    getContinuum - gets continuum and energy bins from Cloudy
+##                   output file.
+##
+##    getRadius - gets radius from Cloudy output file.
+
+#####################################################################
+######################## emissivityMapMode ##########################
+
+sub emissivityMapMode {
+
+    # base name for output files
+    my $keyName = $outputDir . $outputFilePrefix . "_run" . $currentRunIndex;
+
+    # output files needed in emissivity map mode
+    my $inputFile = $keyName . ".cloudyIn";
+    my $outputFile = $keyName . ".cloudyOut";
+    my $warningFile = $keyName . ".warnings";
+    my $continuumFile = $keyName . ".continuum";
+    my $radiusFile = $keyName . ".radius";
+    my $dataOutputFile = $keyName . ".dat";
+
+    # suffix for temporary files
+    my $tempFileSuffix = ".temp";
+
+    # if this is a restart, and this is the interrupted file, delete old files
+    if (($restart) && ($restartIndex == $currentRunIndex)) {
+	unlink $inputFile,
+	$outputFile,
+	$warningFile,
+	$continuumFile,
+	$radiusFile,
+	$dataOutputFile;
+    }
+
+    # process commands into simple list
+    my $commandsPointer;
+    my $headerCommandsPointer;
+    my $userFilesPointer;
+
+    ($commandsPointer,$headerCommandsPointer,$userFilesPointer) = &processCommands(@_);
+
+    # commands for this run
+    my @commands = @$commandsPointer;
+
+    # list of lines to throw as a header into output file
+    my @headerCommands = @$headerCommandsPointer;
+
+    # list of user specified files
+    my @userFiles = @$userFilesPointer;
+
+    # check for a coronal equilibrium command
+    my $coronalEquilibrium = -1;
+  CHECK: for (my $q = 0;$q < @commands;$q++) {
+      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
+	  $coronalEquilibrium = $q;
+	  last CHECK;
+      }
+  }
+
+    # temporary files
+    my $tempInputFile = $inputFile . $tempFileSuffix;
+    my $tempOutputFile = $outputFile . $tempFileSuffix;
+    my $tempContinuumFile = $continuumFile . $tempFileSuffix;
+    my $tempRadiusFile = $radiusFile . $tempFileSuffix;
+
+    # find user specified files hidden in commands and add temp suffix to their names
+    foreach my $command (@commands) {
+	if ($command =~ /\"(.+)\"/) {
+	    my $tempUserFile = $1 . $tempFileSuffix;
+	    $command =~ s/$1/$tempUserFile/;
+	}
+    }
+
+    # create file header
+    open (OUT, ">$dataOutputFile") or die "Can't open $dataOutputFile to write the header.\n";
+    print OUT "# " . scalar (localtime) . "\n";
+    print OUT "#\n";
+    print OUT "# Emissivity Map File\n";
+    print OUT "#\n";
+    print OUT "# Loop values:\n";
+    print OUT @headerCommands;
+    print OUT "#\n";
+    print OUT "# Data Columns:\n";
+    print OUT "# Te [K]\n";
+    print OUT "# Luminosity [erg s^-1]\n";
+    print OUT "#\n";
+    print OUT "#E [$emissivityMapEnergyUnits]      " . join "  ",@emissivityMapEnergies;
+    print OUT "\n";
+    print OUT "#Te           L\n";
+    close (OUT);
+
+    # loop over specified temperature range, collecting heating, cooling, and ionization state
+    my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+$coolingMapdT  : $coolingMapTmax*(10**$coolingMapdLogT);
+
+    # used to write inverted data file
+    my @emissivityData = ();
+
+    foreach my $temperature (@coolingMapTemperatures) {
+
+	$temperature = sprintf "%f", $temperature;
+
+	my @runCommands = @commands;
+
+	# add either constant temperature or coronal equilibrium command
+	if ($coronalEquilibrium >= 0) {
+	    delete $runCommands[$coronalEquilibrium];
+	    push @runCommands, "coronal equilibrium T = $temperature linear\n";
+	}
+	else {
+	    push @runCommands, "constant temperature $temperature K\n";
+	}
+
+	# add cooling map mode commands
+	push @runCommands, "punch last continuum units $emissivityMapEnergyUnits file = \"$tempContinuumFile\"\n";
+	push @runCommands, "punch last radius file = \"$tempRadiusFile\"\n";
+
+	# run Cloudy once or twice, depending on below
+	my $cloudyCrashed = 0;
+	my @warnings = ();
+
+	# run Cloudy and get warnings and crash flag
+	($cloudyCrashed,@warnings) = &runCloudy($tempInputFile,$tempOutputFile,@runCommands);
+
+	# if there were warnings, add them to a file
+	if (@warnings) {
+	    open (WARN, ">>$warningFile") or die "Couldn't open $warningFile to add warnings.\n";
+	    printf WARN "## Warnings produced for T = %.3e.\n", $temperature;
+	    print WARN @warnings;
+	    close (WARN);
+	}
+
+	# warn if there was a crash
+	if ($cloudyCrashed) {
+
+	    # if running in parallel and supposed to exit on crash, catch it here.
+	    if (($parallel) && ($exitOnCrash)) {
+		# return out of subroutine so child can exit properly
+		return;
+	    }
+
+	    printf "Cloudy crashed for T = %.3e of run $currentRunIndex.  If this continues, think about exiting.\n", $temperature;
+	}
+
+	# if no crash, get the stuff we want
+	else {
+
+	    # get continuum, energies, and radius
+	    my ($energyPtr,$continuumPtr) = &getContinuum($tempContinuumFile);
+	    my $radius = &getRadius($tempRadiusFile);
+
+	    # get  frequencies from energies
+	    die "Units: $emissivityMapEnergyUnits unavailable for convertion.\n" 
+		unless (defined($energyConversion{$emissivityMapEnergyUnits}));
+	    my @frequencies = ();
+	    for (my $q = 0;$q < @$energyPtr;$q++) {
+		$frequencies[$q] = $$energyPtr[$q] / $energyConversion{$emissivityMapEnergyUnits};
+	    }
+
+	    # convert nuF_nu to F_nu
+	    for (my $q = 0;$q < @$continuumPtr;$q++) {
+		$$continuumPtr[$q] /= $frequencies[$q];
+	    }
+
+	    # linearly interpolate to get continuum in requested energy bins
+	    my @emissivityMapContinuum = &getInterpolatedContinuum($continuumPtr,$energyPtr,\@emissivityMapEnergies);
+
+ 	    # output Te and luminosities
+ 	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
+ 	    printf OUT "%.".$temperaturePrecision."e",$temperature;
+
+	    foreach (my $q = 0;$q < @emissivityMapContinuum;$q++) {
+
+		# this should give a luminosity in erg/s.
+		$emissivityMapContinuum[$q] *= 4*3.14159*($radius**2);
+
+		# this will give nuF_nu to compare with the Cloudy output files.
+		# $emissivityMapContinuum[$q] *= $emissivityMapEnergies[$q] / $energyConversion{$emissivityMapEnergyUnits};
+
+		printf OUT "  %.".$emissivityPrecision."e",$emissivityMapContinuum[$q];
+	    }
+	    print OUT "\n";
+ 	    close (OUT);
+
+	    # add data to array
+	    @{$emissivityData[@emissivityData]} = @emissivityMapContinuum;
+
+	    # append temp file contents to larger file, if someone wants to keep this stuff
+	    if ($saveCloudyOutputFiles) {
+		&pushFile($inputFile,$tempInputFile,(sprintf "## Input for T = %.3e.\n", $temperature));
+		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output for T = %.3e.\n", $temperature));
+ 		&pushFile($continuumFile,$tempContinuumFile,(sprintf "## Continuum punch for T = %.3e.\n", $temperature));
+ 		&pushFile($radiusFile,$tempRadiusFile,(sprintf "## Radius punch for T = %.3e.\n", $temperature));
+	    }
+
+	    # append user specified output files
+	    foreach my $userFile (@userFiles) {
+		&pushFile($userFile,"$userFile$tempFileSuffix",(sprintf "## User output punch for T = %.3e.\n",$temperature));
+	    }
+	}
+
+    } # end loop over temperature
+
+    # make inverted data file (better for plotting spectra)
+    my $invertedDataFile = $keyName . ".inv";
+
+    open (OUT,">$invertedDataFile");
+    print OUT "#Te         ";
+    foreach my $temperature (@coolingMapTemperatures) {
+	printf OUT "  %.".$temperaturePrecision."e",$temperature;
+    }
+    print OUT "\n";
+    print OUT "#E            L\n";
+    for (my $q = 0;$q < @emissivityMapEnergies;$q++) {
+	printf OUT "%.".$emissivityPrecision."e",$emissivityMapEnergies[$q];
+	for (my $w = 0;$w < @coolingMapTemperatures;$w++) {
+	    printf OUT "  %.".$emissivityPrecision."e",$emissivityData[$w][$q];
+	}
+	print OUT "\n";
+    }
+    close (OUT);
+
+    # delete temp files
+    unlink $tempInputFile,
+    $tempOutputFile,
+    $tempContinuumFile,
+    $tempRadiusFile;
+
+    # delete user specified temp files
+    foreach my $userFile (@userFiles) {
+	unlink "$userFile$tempFileSuffix";
+    }
+
+}
+
+#####################################################################
+################### emissivityMapModeInitialize #####################
+
+sub emissivityMapModeInitialize {
+
+    # Use coolingMapModeInitialize to initialize temperatures.
+    &coolingMapModeInitialize();
+
+    # Initialize energy bins.
+
+    # check energy settings for sanity
+    die "emissivityMapdE and emissivityMapdLogE cannot both be set.\n"
+	if (defined($emissivityMapdE) && defined($emissivityMapdLogE));
+
+    my $EValuesSet = int(defined($emissivityMapEmin)) + 
+	int(defined($emissivityMapEmax)) + 
+	int(defined($emissivityMapdE) || defined($emissivityMapdLogE)) + 
+	int(defined($emissivityMapEpoints));
+
+    die "Energy loop overdefined: set only three values.\n"
+	if ($EValuesSet > 3);
+
+    die "Energy loop not defined properly for emissivity map mode.\n"
+	if ($EValuesSet < 3);
+
+    # linear step specified
+    if (defined($emissivityMapdE)) {
+	if (!(defined($emissivityMapEmin))) {
+	    $emissivityMapEmin = $emissivityMapEmax - ($emissivityMapdE*($emissivityMapEpoints-1));
+	}
+	elsif (!(defined($emissivityMapEmax))) {
+	    $emissivityMapEmax = $emissivityMapEmin + ($emissivityMapdE*($emissivityMapEpoints-1));
+	}
+	else {
+	    $emissivityMapEpoints = ($emissivityMapEmax - $emissivityMapEmin)/$emissivityMapdE + 1;
+	}
+    }
+    # log step specified
+    elsif (defined($emissivityMapdLogE)) {
+	if (!(defined($emissivityMapEmin))) {
+	    $emissivityMapEmin = $emissivityMapEmax / (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
+	}
+	elsif (!(defined($emissivityMapEmax))) {
+	    $emissivityMapEmax = $emissivityMapEmin * (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
+	}
+	else {
+	    $emissivityMapEpoints = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/$emissivityMapdLogE + 1;
+	}
+    }
+    # no step specified, check the flag
+    else {
+	# if only one point, just set something and go
+	if ($emissivityMapEpoints == 1) {
+	    # just make it something
+	    $emissivityMapdLogE = 1;
+	}
+	# log bins
+	elsif ($emissivityMapLogEnergyBins) {
+	    $emissivityMapdLogE = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/($emissivityMapEpoints-1);
+	}
+	# linear bins
+	else {
+	    $emissivityMapdE = ($emissivityMapEmax-$emissivityMapEmin)/($emissivityMapEpoints-1);
+	}
+    }
+
+    # construct array of energy points
+    my $energy = $emissivityMapEmin;
+    my $endingCriterion = defined($emissivityMapdE) ? $emissivityMapEmax+0.5*$emissivityMapdE : $emissivityMapEmax*(10**(0.5*$emissivityMapdLogE));
+
+    while ($energy < $endingCriterion) {
+
+	push @emissivityMapEnergies, (sprintf "%.6e",$energy);
+
+	# increment energy
+	if (defined($emissivityMapdE)) {
+	    $energy += $emissivityMapdE;
+	}
+	else {
+	    $energy *= 10**$emissivityMapdLogE;
+	}
+    }
+
+}
+
+#####################################################################
+#################### getInterpolatedContinuum #######################
+# Linearly interpolate over continuum returned by Cloudy to get 
+# continuum in range requested by user.
+
+sub getInterpolatedContinuum {
+    my ($cloudyContinuumPtr,$cloudyEnergyPtr,$userEnergyPtr) = @_;
+
+    my @userContinuum;
+
+    for (my $q = 0;$q < @$userEnergyPtr;$q++) {
+
+	my $index;
+
+	# get index
+	if ($$userEnergyPtr[$q] <= $$cloudyEnergyPtr[0]) {
+	    $index = 0;
+	}
+	elsif ($$userEnergyPtr[$q] >= $$cloudyEnergyPtr[-2]) {
+	    $index = -2;
+	}
+	else {
+	    # bisection
+	    $index = 0;
+	    my $high = @$cloudyEnergyPtr - 1;
+	    my $mid;
+	    while ($high - $index > 1) {
+		$mid = int(($high + $index)/2);
+		if ($$userEnergyPtr[$q] >= $$cloudyEnergyPtr[$mid]) {
+		    $index = $mid;
+		}
+		else {
+		    $high = $mid;
+		}
+	    }
+	}
+
+	my $slope = ($$cloudyContinuumPtr[$index+1]-$$cloudyContinuumPtr[$index]) / 
+	    ($$cloudyEnergyPtr[$index+1]-$$cloudyEnergyPtr[$index]);
+
+	$userContinuum[$q] = $slope * ($$userEnergyPtr[$q]-$$cloudyEnergyPtr[$index]) +
+	    $$cloudyContinuumPtr[$index];
+
+    }
+
+    return @userContinuum;
+}
+
+#####################################################################
+########################## getContinuum #############################
+# Parse through Cloudy output file made with 'punch continuum' 
+# command.
+
+sub getContinuum {
+    my ($continuumFile) = @_;
+
+    my @continuum;
+    my @energies;
+
+    open (IN,"<$continuumFile") or die "Couldn't open contiuum file, $continuumFile, for reading.\n";
+    while (my $line = <IN>) {
+	if ($line !~ /^\s*\#/) {
+	    my @onLine = split /\t/,$line;
+	    push @energies, $onLine[0];
+	    push @continuum, $onLine[3];
+	}
+    }
+    close (IN);
+
+    return (\@energies,\@continuum);
+}
+
+#####################################################################
+############################ getRadius ##############################
+# Parse through Cloudy output file made with 'punch radius' 
+# command.
+
+sub getRadius {
+    my ($radiusFile) = @_;
+
+    my @radius;
+
+    open (IN,"<$radiusFile") or die "Couldn't open contiuum file, $radiusFile, for reading.\n";
+    while (my $line = <IN>) {
+	if ($line !~ /^\s*\#/) {
+	    my @onLine = split /\t/,$line;
+	    push @radius, $onLine[1];
+	}
+    }
+    close (IN);
+
+    return $radius[0];
 }
 
 #####################################################################
