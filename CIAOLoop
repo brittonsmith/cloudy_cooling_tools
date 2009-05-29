@@ -10,16 +10,31 @@
 #####################################################################
 
 # Version
-my $version = "1.6";
+my $version = "1.7";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
 ###                                                    ###
+### 1.7 - 1-27-08 - In parallel mode, added waitpid()  ###
+###                 command when parent detects that   ###
+###                 the child has finished.  This will ###
+###                 avoid the creation of zombie       ###
+###                 children.  Spooky.                 ###
+###                                                    ###
+### 1.6.2 - 1-19-08 - Added fix to prevent ionization  ###
+###                   fraction of most abundant ion    ###
+###                   from being negative.             ###
+###                                                    ###
+### 1.6.1 - 1-16-08 - Added 'linear' after constant    ###
+###                   temperature command in cooling   ###
+###                   map mode to avoid accidentally   ###
+###                   going into log space.            ###
+###                                                    ###
 ### 1.6 - 10-31-07 - Added new run mode, 2, for        ###
 ###                  creating maps of luminosity as a  ###
 ###                  function of temperature and       ###
-###                  energy.
+###                  energy.                           ###
 ###                                                    ###
 ### 1.5.1 - 8-14-07 - Changed read of cooling punch    ###
 ###                   output to account for changes    ###
@@ -158,6 +173,10 @@ my $currentRunIndex = 1;
 # Parallel on/off flag
 my $parallel = 0;
 
+# Array of PIDs for active children
+# If we don't wait for them to finish, they'll become zombies.
+my @pids = ();
+
 # User login (for remote login)
 my $login = getlogin() || (getpwuid($<))[0];
 
@@ -258,6 +277,9 @@ my @mass = ();
 #####################################################################
 ########### Emissivity Map Mode Parameters and Variables ############
 #####################################################################
+
+# File name for file containing emissivity map energies
+my $emissivityMapEnergyFile;
 
 # Minimum energy for emissivity map
 my $emissivityMapEmin;
@@ -908,8 +930,20 @@ sub readParameterFile {
       ######################################
 
       # emissivity map mode options
+      # get energies from a file
+      elsif ($line =~ /^emissivityMapEnergyFile(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No file name given for emissivity map energy file on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  die "Emissivity map energy file, $value, does not exist.\n"
+	      unless (-e (glob($value))[0]);
+	  $emissivityMapEnergyFile = (glob($value))[0];
+      }
+
       # get minimum energy
-      elsif ($line =~ /emissivityMapEmin(\z|[\s\=])/i) {
+      elsif ($line =~ /^emissivityMapEmin(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
@@ -921,7 +955,7 @@ sub readParameterFile {
       }
 
       # get maximum energy
-      elsif ($line =~ /emissivityMapEmax(\z|[\s\=])/i) {
+      elsif ($line =~ /^emissivityMapEmax(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
@@ -933,7 +967,7 @@ sub readParameterFile {
       }
 
       # get emissivityMapdE (energy step size)
-      elsif ($line =~ /emissivityMapdE(\z|[\s\=])/i) {
+      elsif ($line =~ /^emissivityMapdE(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
@@ -945,7 +979,7 @@ sub readParameterFile {
       }
 
       # get dLogE (energy step size)
-      elsif ($line =~ /emissivityMapdLogE(\z|[\s\=])/i) {
+      elsif ($line =~ /^emissivityMapdLogE(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
@@ -957,7 +991,7 @@ sub readParameterFile {
       }
 
       # get number of energy steps
-      elsif ($line =~ /emissivityMapEpoints(\z|[\s\=])/i) {
+      elsif ($line =~ /^emissivityMapEpoints(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
@@ -969,7 +1003,7 @@ sub readParameterFile {
       }
 
       # get energy units
-      elsif ($line =~ /emissivityMapEnergyUnits(\z|[\s\=])/i) {
+      elsif ($line =~ /^emissivityMapEnergyUnits(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;	  
@@ -979,7 +1013,7 @@ sub readParameterFile {
       }
 
       # get log energy bin flag
-      elsif ($line =~ /emissivityMapLogEnergyBins(\z|[\s\=])/i) {
+      elsif ($line =~ /^emissivityMapLogEnergyBins(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;	  
@@ -1416,6 +1450,9 @@ sub runCloudyMode {
 		      # This is the parent.
 		      # Get out of this loop.
 
+		      # keep track of PIDs for the children
+		      $pids[$machineToAssign] = $pid;
+
 		      last WAIT;
 		  }
 
@@ -1424,6 +1461,7 @@ sub runCloudyMode {
 		      # Run Cloudy and then exit.
 
 		      # get the machine name to run on
+		      # machine numbers are 1 based
 		      $myMachine = $machines[$machineToAssign-1];
 
 		      print "Running Cloudy: $currentRunIndex of $totalRuns on $myMachine.\n";
@@ -1467,6 +1505,9 @@ sub runCloudyMode {
 		      # if it doesn't exist, put it back into list of available machines
 		      else {
 			  push @machinesAvailable,$machOut;
+
+			  # wait for children to finish so they don't become zombies.
+			  waitpid($pids[$machOut],0);
 		      }
 
 		  }
@@ -1836,7 +1877,7 @@ sub coolingMapMode {
 	    push @runCommands, "coronal equilibrium T = $temperature linear\n";
 	}
 	else {
-	    push @runCommands, "constant temperature $temperature K\n";
+	    push @runCommands, "constant temperature $temperature K linear\n";
 	}
 
 	# add cooling map mode commands
@@ -2270,7 +2311,12 @@ sub getMeanMolecularWeight {
 	    }
 	}
 	# adjust most abundant ionization state so total fraction is 1
-	${$ionizationPointers[$q][-1]} = log(1-$totalFraction)/log(10)
+	if ($totalFraction > 1) {
+	    ${$ionizationPointers[$q][-1]} = -30;
+	}
+	else {
+	    ${$ionizationPointers[$q][-1]} = log(1-$totalFraction)/log(10);
+	}
     }
 
     # calculate total mass and total particles
@@ -2440,7 +2486,7 @@ sub emissivityMapMode {
     print OUT "#\n";
     print OUT "# Data Columns:\n";
     print OUT "# Te [K]\n";
-    print OUT "# Luminosity [erg s^-1]\n";
+    print OUT "# Emissivity [erg s^-1 cm^-3]\n";
     print OUT "#\n";
     print OUT "#E [$emissivityMapEnergyUnits]      " . join "  ",@emissivityMapEnergies;
     print OUT "\n";
@@ -2528,8 +2574,8 @@ sub emissivityMapMode {
 
 	    foreach (my $q = 0;$q < @emissivityMapContinuum;$q++) {
 
-		# this should give a luminosity in erg/s.
-		$emissivityMapContinuum[$q] *= 4*3.14159*($radius**2);
+		# this should give a emissivity in erg s^-1 Hz^-1 cm^-3.
+		$emissivityMapContinuum[$q] *= 3 / $radius;
 
 		# this will give nuF_nu to compare with the Cloudy output files.
 		# $emissivityMapContinuum[$q] *= $emissivityMapEnergies[$q] / $energyConversion{$emissivityMapEnergyUnits};
@@ -2600,77 +2646,92 @@ sub emissivityMapModeInitialize {
 
     # Initialize energy bins.
 
-    # check energy settings for sanity
-    die "emissivityMapdE and emissivityMapdLogE cannot both be set.\n"
-	if (defined($emissivityMapdE) && defined($emissivityMapdLogE));
-
-    my $EValuesSet = int(defined($emissivityMapEmin)) + 
-	int(defined($emissivityMapEmax)) + 
-	int(defined($emissivityMapdE) || defined($emissivityMapdLogE)) + 
-	int(defined($emissivityMapEpoints));
-
-    die "Energy loop overdefined: set only three values.\n"
-	if ($EValuesSet > 3);
-
-    die "Energy loop not defined properly for emissivity map mode.\n"
-	if ($EValuesSet < 3);
-
-    # linear step specified
-    if (defined($emissivityMapdE)) {
-	if (!(defined($emissivityMapEmin))) {
-	    $emissivityMapEmin = $emissivityMapEmax - ($emissivityMapdE*($emissivityMapEpoints-1));
+    # If energy file was given, get values from that
+    if ($emissivityMapEnergyFile) {
+	open (IN,"<$emissivityMapEnergyFile") or die "Couldn't open $emissivityMapEnergyFile.\n";
+	while (my $line = <IN>) {
+	    chomp $line;
+	    push @emissivityMapEnergies, sprintf "%.6e",$line;
 	}
-	elsif (!(defined($emissivityMapEmax))) {
-	    $emissivityMapEmax = $emissivityMapEmin + ($emissivityMapdE*($emissivityMapEpoints-1));
-	}
-	else {
-	    $emissivityMapEpoints = ($emissivityMapEmax - $emissivityMapEmin)/$emissivityMapdE + 1;
-	}
+	close (IN);
     }
-    # log step specified
-    elsif (defined($emissivityMapdLogE)) {
-	if (!(defined($emissivityMapEmin))) {
-	    $emissivityMapEmin = $emissivityMapEmax / (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
-	}
-	elsif (!(defined($emissivityMapEmax))) {
-	    $emissivityMapEmax = $emissivityMapEmin * (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
-	}
-	else {
-	    $emissivityMapEpoints = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/$emissivityMapdLogE + 1;
-	}
-    }
-    # no step specified, check the flag
+
+    # If no file, get them from parameters
     else {
-	# if only one point, just set something and go
-	if ($emissivityMapEpoints == 1) {
-	    # just make it something
-	    $emissivityMapdLogE = 1;
-	}
-	# log bins
-	elsif ($emissivityMapLogEnergyBins) {
-	    $emissivityMapdLogE = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/($emissivityMapEpoints-1);
-	}
-	# linear bins
-	else {
-	    $emissivityMapdE = ($emissivityMapEmax-$emissivityMapEmin)/($emissivityMapEpoints-1);
-	}
-    }
 
-    # construct array of energy points
-    my $energy = $emissivityMapEmin;
-    my $endingCriterion = defined($emissivityMapdE) ? $emissivityMapEmax+0.5*$emissivityMapdE : $emissivityMapEmax*(10**(0.5*$emissivityMapdLogE));
+	# check energy settings for sanity
+	die "emissivityMapdE and emissivityMapdLogE cannot both be set.\n"
+	    if (defined($emissivityMapdE) && defined($emissivityMapdLogE));
 
-    while ($energy < $endingCriterion) {
+	my $EValuesSet = int(defined($emissivityMapEmin)) + 
+	    int(defined($emissivityMapEmax)) + 
+	    int(defined($emissivityMapdE) || defined($emissivityMapdLogE)) + 
+	    int(defined($emissivityMapEpoints));
 
-	push @emissivityMapEnergies, (sprintf "%.6e",$energy);
+	die "Energy loop overdefined: set only three values.\n"
+	    if ($EValuesSet > 3);
 
-	# increment energy
+	die "Energy loop not defined properly for emissivity map mode.\n"
+	    if ($EValuesSet < 3);
+
+	# linear step specified
 	if (defined($emissivityMapdE)) {
-	    $energy += $emissivityMapdE;
+	    if (!(defined($emissivityMapEmin))) {
+		$emissivityMapEmin = $emissivityMapEmax - ($emissivityMapdE*($emissivityMapEpoints-1));
+	    }
+	    elsif (!(defined($emissivityMapEmax))) {
+		$emissivityMapEmax = $emissivityMapEmin + ($emissivityMapdE*($emissivityMapEpoints-1));
+	    }
+	    else {
+		$emissivityMapEpoints = ($emissivityMapEmax - $emissivityMapEmin)/$emissivityMapdE + 1;
+	    }
 	}
+	# log step specified
+	elsif (defined($emissivityMapdLogE)) {
+	    if (!(defined($emissivityMapEmin))) {
+		$emissivityMapEmin = $emissivityMapEmax / (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
+	    }
+	    elsif (!(defined($emissivityMapEmax))) {
+		$emissivityMapEmax = $emissivityMapEmin * (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
+	    }
+	    else {
+		$emissivityMapEpoints = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/$emissivityMapdLogE + 1;
+	    }
+	}
+	# no step specified, check the flag
 	else {
-	    $energy *= 10**$emissivityMapdLogE;
+	    # if only one point, just set something and go
+	    if ($emissivityMapEpoints == 1) {
+		# just make it something
+		$emissivityMapdLogE = 1;
+	    }
+	    # log bins
+	    elsif ($emissivityMapLogEnergyBins) {
+		$emissivityMapdLogE = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/($emissivityMapEpoints-1);
+	    }
+	    # linear bins
+	    else {
+		$emissivityMapdE = ($emissivityMapEmax-$emissivityMapEmin)/($emissivityMapEpoints-1);
+	    }
 	}
+
+	# construct array of energy points
+	my $energy = $emissivityMapEmin;
+	my $endingCriterion = defined($emissivityMapdE) ? $emissivityMapEmax+0.5*$emissivityMapdE : $emissivityMapEmax*(10**(0.5*$emissivityMapdLogE));
+
+	while ($energy < $endingCriterion) {
+
+	    push @emissivityMapEnergies, (sprintf "%.6e",$energy);
+
+	    # increment energy
+	    if (defined($emissivityMapdE)) {
+		$energy += $emissivityMapdE;
+	    }
+	    else {
+		$energy *= 10**$emissivityMapdLogE;
+	    }
+	}
+
     }
 
 }
