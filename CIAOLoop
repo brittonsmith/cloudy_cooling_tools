@@ -9,100 +9,6 @@
 #####################################################################
 #####################################################################
 
-# Version
-my $version = "1.12";
-
-##########################################################
-####################### Change Log #######################
-##########################################################
-###                                                    ###
-### 1.12 - 5-14-09 - Delete all map specific files     ###
-###                  before that map is computed.      ###
-###                                                    ###
-### 1.11 - 4-8-09 - Changed command line flags to make ###
-###                 a bit more sense.                  ###
-###                 -mp => -np (number of processors)  ###
-###                 -p  => -m (machine name)           ###
-###                 -m  => -mp (multiple parts)        ###
-###                                                    ###
-### 1.10 - 3-23-09 - Get hden/eden from physical       ###
-###                  conditions punch.  Add option to  ###
-###                  scale cooling with (n_e * n_H).   ###
-###                  Removed H2 table functionality.   ###
-###                                                    ###
-### 1.9 - 8-8-08 - Changed checkForCrash routine to    ###
-###                work with Cloudy 08.                ###
-###                                                    ###
-### 1.8 - 3-3-08 - Fix emissivity map mode so the      ###
-###                spectrum rebinning is done          ###
-###                correctly.                          ###
-###                                                    ###
-### 1.7 - 1-27-08 - In parallel mode, added waitpid()  ###
-###                 command when parent detects that   ###
-###                 the child has finished.  This will ###
-###                 avoid the creation of zombie       ###
-###                 children.  Spooky.                 ###
-###                                                    ###
-### 1.6.2 - 1-19-08 - Added fix to prevent ionization  ###
-###                   fraction of most abundant ion    ###
-###                   from being negative.             ###
-###                                                    ###
-### 1.6.1 - 1-16-08 - Added 'linear' after constant    ###
-###                   temperature command in cooling   ###
-###                   map mode to avoid accidentally   ###
-###                   going into log space.            ###
-###                                                    ###
-### 1.6 - 10-31-07 - Added new run mode, 2, for        ###
-###                  creating maps of luminosity as a  ###
-###                  function of temperature and       ###
-###                  energy.                           ###
-###                                                    ###
-### 1.5.1 - 8-14-07 - Changed read of cooling punch    ###
-###                   output to account for changes    ###
-###                   made in Cloudy version 07.02.    ###
-###                                                    ###
-### 1.5 - 6-1-07 - when Cloudy crashes when running in ###
-###                parallel, child will now exit       ###
-###                properly so that the machine can    ###
-###                become available again.  Currently, ###
-###                this is only implemented in Cooling ###
-###                Map Mode, not Bare Mode or in the   ###
-###                template.                           ###
-###                                                    ###
-### 1.4.3 - 5-24-07 - fixed small bug in syncronized   ###
-###                   loops.                           ###
-###                                                    ###
-### 1.4.2 - 4-25-07 - decimal precision for cooling    ###
-###                   maps now controlled by           ###
-###                   variables.                       ###
-###                                                    ###
-### 1.4.1 - 4-05-07 - fixed precision on temperatures  ###
-###                   in cooling maps.                 ###
-###                                                    ###
-### 1.4 - 4-02-07 - added -mp flag to run with         ###
-###       multiple processors on local machine.        ###
-###       Syntax is -mp [number of procs].             ###
-###                                                    ###
-### 1.3.1 - 3-30-07 - added login name to remotelogin  ###
-###         command.  Fixed bug in -m feature.  Code   ###
-###         would exit when it came to last run in     ###
-###         that part.  Not anymore!                   ###
-###                                                    ###
-### 1.3 - 3-26-07 - added ability to perform run in    ###
-###       multiple parts with -m flag.                 ###
-###                                                    ###
-### 1.2 - 6-20-06 - changed precision on cooling map   ###
-###       output from three digits to six. (Line 1721) ###
-###       (Now obsolete.)                              ###
-###                                                    ###
-### 1.1 - 4-28-06 - moved coronal equilibrium command  ###
-###       to end of command array so Cloudy gets it    ###
-###       last.                                        ###
-###                                                    ###
-##########################################################
-##########################################################
-##########################################################
-
 use strict;
 use File::Glob;
 
@@ -383,12 +289,6 @@ while (my $arg = shift @ARGV) {
 	$numberMultiProcessors = shift @ARGV;
 	die "Argument after -np flag should be a positive integer.\n" if (($numberMultiProcessors =~ /\D/) || 
 									  ($numberMultiProcessors <= 0));
-    }
-
-    # return version
-    elsif ($arg =~ /^-v$/) {
-	print "CIAOLoop, version $version.\n";
-	exit;
     }
 
     # get parameter file name
