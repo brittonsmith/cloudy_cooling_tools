@@ -10,11 +10,14 @@
 #####################################################################
 
 # Version
-my $version = "1.8";
+my $version = "1.9";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.9 - 8-8-08 - Changed checkForCrash routine to    ###
+###                work with Cloudy 08.                ###
 ###                                                    ###
 ### 1.8 - 3-3-08 - Fix emissivity map mode so the      ###
 ###                spectrum rebinning is done          ###
@@ -1554,7 +1557,10 @@ sub checkForCrash {
     }
 
     # check last output line to see if Cloudy crashed
-    if (!($lines[-1] =~ /Stop in maincl/) || ($lines[-1] =~ /return value is 1/)) {
+    # Cloudy versions 07.02 and earlier.
+    ## if (!($lines[-1] =~ /Stop in maincl/) || ($lines[-1] =~ /return value is 1/)) {
+    # Cloudy versions 08 and later.
+    if (!($lines[-1] =~ /Stop in main at maincl/) || ($lines[-1] =~ /return value is 1/)) {
 	$cloudyCrashed = 1;
 
 	# don't exit if running in parallel
