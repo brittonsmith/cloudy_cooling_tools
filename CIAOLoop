@@ -10,17 +10,26 @@
 #####################################################################
 
 # Version
-my $version = "1.3";
+my $version = "1.4";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
 ###                                                    ###
+### 1.4 - 4-02-07 - added -mp flag to run with         ###
+###       multiple processors on local machine.        ###
+###       Syntax is -mp [number of procs].             ###
+###                                                    ###
+### 1.3.1 - 3-30-07 - added login name to remotelogin  ###
+###         command.  Fixed bug in -m feature.  Code   ###
+###         would exit when it came to last run in     ###
+###         that part.  Not anymore!                   ###
+###                                                    ###
 ### 1.3 - 3-26-07 - added ability to perform run in    ###
 ###       multiple parts with -m flag.                 ###
 ###                                                    ###
 ### 1.2 - 6-20-06 - changed precision on cooling map   ###
-###       output from three digits to six.             ###
+###       output from three digits to six. (Line 1721) ###
 ###                                                    ###
 ### 1.1 - 4-28-06 - moved coronal equilibrium command  ###
 ###       to end of command array so Cloudy gets it    ###
@@ -118,8 +127,12 @@ my $currentRunIndex = 1;
 # Parallel on/off flag
 my $parallel = 0;
 
+# User login (for remote login)
+my $login = getlogin() || (getpwuid($<))[0];
+
 # Remote login (rsh, ssh, etc.)
-my $remoteLogin = "ssh";
+my $remoteLogin = "rsh";
+$remoteLogin.= " -l $login" if ($login);
 
 # Machine file for parallel run
 my $machineFile = "";
@@ -135,6 +148,16 @@ my @machinesUnavailable = ();
 
 # When child spawns to run Cloudy, this variable tells it which machine to run on
 my $myMachine = "";
+
+#####################################################################
+#### Variables for running multiple processors on local machine #####
+#####################################################################
+
+# Multiple processor on/off flag
+my $multiProcessor = 0;
+
+# Number of processors to use on machine
+my $numberMultiProcessors = 0;
 
 #####################################################################
 ############### Variables for performing run in parts ###############
@@ -236,6 +259,15 @@ while (my $arg = shift @ARGV) {
 	die "First argument must be less than or equal to second.\n" if ($thisMultiPart > $totalMultiParts);
     }
 
+    # run on multiprocessor machine
+    elsif ($arg =~ /^-mp$/) {
+	$multiProcessor = 1;
+	$parallel = 1;
+	$numberMultiProcessors = shift @ARGV;
+	die "Argument after -mp flag should be a positive integer.\n" if (($numberMultiProcessors =~ /\D/) || 
+									  ($numberMultiProcessors <= 0));
+    }
+
     # return version
     elsif ($arg =~ /^-v$/) {
 	print "CIAOLoop, version $version.\n";
@@ -296,25 +328,31 @@ if ($parallel) {
 # initialize run mode if necessary
 $initializeMode[$cloudyRunMode]->() if (ref($initializeMode[$cloudyRunMode]) eq 'CODE');
 
-
 # if loop commands were given, start recursive looping over commands
 if (@loopCommands) {
-&recurse();
+    &recurse();
 }
 # if no loop commands given, run Cloudy with only constant commands
 else {
     &runCloudyMode();
 }
 
-
 # if running in parallel, wait for children to finish before exiting
 while (@machinesUnavailable) {
     my @machineListTemp = ();
     while (my $machineRunning = shift @machinesUnavailable) {
 	# children communicate that they're done by deleting their .mach file
-	my $machineRunningFile = $outputDir . $outputFilePrefix . "_" . $machineRunning . ".mach";
+	my $runningMachineFile;
+	if ($multiParts) {
+	    $runningMachineFile = $outputDir . $outputFilePrefix . 
+		".part" . $thisMultiPart . "_" . $totalMultiParts . 
+		"_" . $machineRunning . ".mach";
+	}
+	else {
+	    $runningMachineFile = $outputDir . $outputFilePrefix . "_" . $machineRunning . ".mach";
+	}
 
-	if  (-e $machineRunningFile) {
+	if  (-e $runningMachineFile) {
 	    push @machineListTemp,$machineRunning;
 	}
 	else {
@@ -1142,7 +1180,12 @@ sub runCloudy {
 
     # if running in parallel, call Cloudy remotely
     if ($parallel) {
-	system("$remoteLogin $myMachine $cloudyExe < $inputFile > $outputFile");
+	if ($myMachine eq '(local)') {
+	    system("$cloudyExe < $inputFile > $outputFile");
+	}
+	else {
+	    system("$remoteLogin $myMachine $cloudyExe < $inputFile > $outputFile");
+	}
     }
     else {
 	system("$cloudyExe < $inputFile > $outputFile");
@@ -1341,17 +1384,28 @@ sub checkForCrash {
 sub getMachines {
     my ($machineFile) = @_;
 
-    open (MACH, "<$machineFile") or die "Couldn't open machine file $machineFile.\n";
-    my @lines = <MACH>;
-    close (MACH);
     my $q = 1;
-    foreach my $line (@lines) {
-	if ($line =~ /^(\w+):/) {
-	    push @machines,$1;
-	    push @machinesAvailable,$q;
+    if ($machineFile) {
+	open (MACH, "<$machineFile") or die "Couldn't open machine file $machineFile.\n";
+	my @lines = <MACH>;
+	close (MACH);
+	foreach my $line (@lines) {
+	    if ($line =~ /^(\w+):/) {
+		push @machines,$1;
+		push @machinesAvailable,$q;
+		$q++;
+	    }
+	}
+    }
+
+    if ($multiProcessor) {
+	for (my $w = 0;$w < $numberMultiProcessors;$w++) {
+	    push @machines, '(local)';
+	    push @machinesAvailable, $q;
 	    $q++;
 	}
     }
+
 }
 
 #####################################################################
@@ -1703,7 +1757,7 @@ sub coolingMapMode {
 
 	    # output Te, heating, cooling, and mmw to file
 	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
-	    printf OUT "%.6e\t%.6e\t%.6e\t%.6f\n", $temperature, $heating, $cooling, $mmw;
+	    printf OUT "%.6e\t%.12e\t%.12e\t%.6f\n", $temperature, $heating, $cooling, $mmw;
 	    close (OUT);
 
 	    # append temp file contents to larger file, if someone wants to keep this stuff
