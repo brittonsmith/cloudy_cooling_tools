@@ -10,11 +10,15 @@
 #####################################################################
 
 # Version
-my $version = "1.5";
+my $version = "1.5.1";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.5.1 - 8-14-07 - Changed read of cooling punch    ###
+###                   output to account for changes    ###
+###                   made in Cloudy version 07.02.    ###
 ###                                                    ###
 ### 1.5 - 6-1-07 - when Cloudy crashes when running in ###
 ###                parallel, child will now exit       ###
@@ -1693,7 +1697,7 @@ sub coolingMapMode {
 	# add either constant temperature or coronal equilibrium command
 	if ($coronalEquilibrium >= 0) {
 	    delete $runCommands[$coronalEquilibrium];
-	    push @runCommands, "coronal equilibrium T = $temperature\n";
+	    push @runCommands, "coronal equilibrium T = $temperature linear\n";
 	}
 	else {
 	    push @runCommands, "constant temperature $temperature K\n";
@@ -2004,7 +2008,13 @@ sub getCooling {
     open (COOL, "<$coolingFile") or die "Couldn't open $coolingFile to get cooling.\n";
     my @lines = <COOL>;
     close (COOL);
-    my (undef,$heating,$cooling,undef) = split /\t/, $lines[-1];
+
+    # The line below works for Cloudy version 06 and earlier.
+    # my (undef,$heating,$cooling,undef) = split /\t/, $lines[-1];
+
+    # The line below works for Cloudy version 07 and later.
+    my (undef,undef,$heating,$cooling,undef) = split /\t/, $lines[-1];
+
     return ($heating,$cooling);
 }
 
