@@ -10,11 +10,14 @@
 #####################################################################
 
 # Version
-my $version = "1.4";
+my $version = "1.4.1";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.4.1 - 4-05-07 - fixed precision on temperatures  ###
+###                   in cooling maps.                 ###
 ###                                                    ###
 ### 1.4 - 4-02-07 - added -mp flag to run with         ###
 ###       multiple processors on local machine.        ###
@@ -1869,8 +1872,6 @@ sub coolingMapModeInitialize {
 
     while ($temperature < $endingCriterion) {
 
-	$temperature = sprintf "%.3e", $temperature;
-
 	# check that temperature match H2 fraction table, if used
 	if ($coolingMapH2FractionTableFile) {
 	    my $H2FractionTemperature = shift @H2FractionTemperatures;
@@ -1879,7 +1880,7 @@ sub coolingMapModeInitialize {
 	    }
 	}
 
-	push @coolingMapTemperatures, $temperature;
+	push @coolingMapTemperatures, (sprintf "%.6e",$temperature);
 
 	# increment temperature
 	if (defined($coolingMapdT)) {
