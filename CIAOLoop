@@ -10,11 +10,14 @@
 #####################################################################
 
 # Version
-my $version = "1.11";
+my $version = "1.12";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.12 - 5-14-09 - Delete all map specific files     ###
+###                  before that map is computed.      ###
 ###                                                    ###
 ### 1.11 - 4-8-09 - Changed command line flags to make ###
 ###                 a bit more sense.                  ###
@@ -1758,16 +1761,14 @@ sub coolingMapMode {
     my $tempFileSuffix = ".temp";
 
     # if this is a restart, and this is the interrupted file, delete old files
-    if (($restart) && ($restartIndex == $currentRunIndex)) {
-	unlink $inputFile,
-	$outputFile,
-	$coolingFile,
-	$abundanceFile,
-	$ionizationFile,
-	$physicalConditionsFile,
-	$warningFile,
-	$dataOutputFile;
-    }
+    unlink $inputFile if (-e $inputFile);
+    unlink $outputFile if (-e $outputFile);
+    unlink $coolingFile if (-e $coolingFile);
+    unlink $abundanceFile if (-e $abundanceFile);
+    unlink $ionizationFile if (-e $ionizationFile);
+    unlink $physicalConditionsFile if (-e $physicalConditionsFile);
+    unlink $warningFile if (-e $warningFile);
+    unlink $dataOutputFile if (-e $dataOutputFile);
 
     # process commands into simple list
     my $commandsPointer;
