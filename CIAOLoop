@@ -10,11 +10,14 @@
 #####################################################################
 
 # Version
-my $version = "1.2";
+my $version = "1.3";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.3 - 3-26-07 - added ability to perform run in    ###
+###       multiple parts with -m flag.                 ###
 ###                                                    ###
 ### 1.2 - 6-20-06 - changed precision on cooling map   ###
 ###       output from three digits to six.             ###
@@ -86,6 +89,9 @@ my $outputFilePrefix = "CIAOLoop";
 # Output directory
 my $outputDir = "";
 
+# Run file path
+my $runFile = "";
+
 # Type of Cloudy run.
 my $cloudyRunMode = 0;
 
@@ -129,6 +135,25 @@ my @machinesUnavailable = ();
 
 # When child spawns to run Cloudy, this variable tells it which machine to run on
 my $myMachine = "";
+
+#####################################################################
+############### Variables for performing run in parts ###############
+#####################################################################
+
+# Multiple parts on/off flag
+my $multiParts = 0;
+
+# Total number of parts
+my $totalMultiParts;
+
+# This specific part
+my $thisMultiPart;
+
+# Starting index for this part
+my $multiPartStartIndex;
+
+# Ending index for this part
+my $multiPartEndIndex;
 
 #####################################################################
 ############# Cooling Map Mode Parameters and Variables #############
@@ -200,6 +225,17 @@ while (my $arg = shift @ARGV) {
 	die "Machine file $machineFile does not exist.\n" unless (-e $machineFile);
     }
 
+    # run in parts
+    elsif ($arg =~ /^-m$/) {
+	$multiParts = 1;
+	$thisMultiPart = shift @ARGV;
+	die "First argument after -m flag must be a positive integer.\n" if ($thisMultiPart =~ /\D/);
+	$totalMultiParts = shift @ARGV;
+	die "Second argument after -m flag must be a positive integer.\n" if ($totalMultiParts =~ /\D/);
+	die "Multipart arguments cannot be zero.\n" if (($thisMultiPart == 0) || ($totalMultiParts == 0));
+	die "First argument must be less than or equal to second.\n" if ($thisMultiPart > $totalMultiParts);
+    }
+
     # return version
     elsif ($arg =~ /^-v$/) {
 	print "CIAOLoop, version $version.\n";
@@ -219,7 +255,23 @@ while (my $arg = shift @ARGV) {
 $totalRuns += $currentRunIndex - 1;
 
 # make header for run file
-my $runFile = $outputDir . $outputFilePrefix . ".run";
+if ($multiParts) {
+    $runFile = $outputDir . $outputFilePrefix . ".run.part" . $thisMultiPart . "_" . $totalMultiParts;
+}
+else {
+    $runFile = $outputDir . $outputFilePrefix . ".run";
+}
+
+# if running in multiple parts, calculate starting and ending indices
+if ($multiParts) {
+    my $mapsPerPart = ($totalRuns - $currentRunIndex + 1) / $totalMultiParts;
+    $mapsPerPart = int($mapsPerPart+1) if ($mapsPerPart != int($mapsPerPart));
+
+    $multiPartStartIndex = $mapsPerPart * ($thisMultiPart - 1) + $currentRunIndex;
+    $multiPartEndIndex = $multiPartStartIndex + $mapsPerPart - 1;
+
+    print "Running part $thisMultiPart of $totalMultiParts, maps $multiPartStartIndex to $multiPartEndIndex.\n";
+}
 
 print "Run started at " . scalar (localtime) . "\n";
 
@@ -1110,7 +1162,9 @@ sub runCloudyMode {
     my ($runFileString,@loopCommands) = @_;
 
     # if this is a test, only update run file
-    unless ($test || ($restart && ($currentRunIndex < $restartIndex))) {
+    unless ($test || ($restart && ($currentRunIndex < $restartIndex)) ||
+	    ($multiParts && ($currentRunIndex < $multiPartStartIndex)) ||
+	    ($multiParts && ($currentRunIndex > $multiPartEndIndex))) {
 
 	# if running in parallel, do it this way
 	if ($parallel) {
@@ -1131,7 +1185,15 @@ sub runCloudyMode {
 		  push @machinesUnavailable, $machineToAssign;
 
 		  # signal that machine is in use by creating a unique file
-		  my $runningMachineFile = $outputDir . $outputFilePrefix . "_" . $machineToAssign . ".mach";
+		  my $runningMachineFile;
+		  if ($multiParts) {
+		      $runningMachineFile = $outputDir . $outputFilePrefix . 
+			  ".part" . $thisMultiPart . "_" . $totalMultiParts . 
+			  "_" . $machineToAssign . ".mach";
+		  }
+		  else {
+		      $runningMachineFile = $outputDir . $outputFilePrefix . "_" . $machineToAssign . ".mach";
+		  }
 		  open (MACH, ">$runningMachineFile");
 		  print MACH "$machines[$machineToAssign-1] starting run $currentRunIndex at " . scalar (localtime) . "\n";
 		  close (MACH);
@@ -1176,7 +1238,15 @@ sub runCloudyMode {
 		  # go through all unavailable machines and check if they've become available
 		  while (my $machOut = shift @machinesUnavailable) {
 
-		      my $machineUnavailableFile = $outputDir . $outputFilePrefix . "_" . $machOut . ".mach";
+		      my $machineUnavailableFile;
+		      if ($multiParts) {
+			  $machineUnavailableFile = $outputDir . $outputFilePrefix . 
+			      ".part" . $thisMultiPart . "_" . $totalMultiParts . 
+			      "_" . $machOut . ".mach";
+		      }
+		      else {
+			  $machineUnavailableFile = $outputDir . $outputFilePrefix . "_" . $machOut . ".mach";
+		      }
 
 		      # if machine's file still exists, it's still unavailable
 		      if (-e $machineUnavailableFile) {
@@ -1215,7 +1285,11 @@ sub runCloudyMode {
 
     # update run file
     # if this is a restart, only append if we've passed the restart index
-    unless (($restart) && ($currentRunIndex <= $restartIndex)) {
+    # if running in multiple parts, only append if we're in range of this part
+    unless (($restart && ($currentRunIndex <= $restartIndex)) ||
+	    ($multiParts && ($currentRunIndex < $multiPartStartIndex)) ||
+	    ($multiParts && ($currentRunIndex > $multiPartEndIndex))) {
+
 	# append run file
 	open (RUN, ">>$runFile") or die "Couldn't open $runFile to append.\n";
 	print RUN "$currentRunIndex\t$runFileString";
