@@ -10,14 +10,18 @@
 #####################################################################
 
 # Version
-my $version = "1.1";
+my $version = "1.2";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
 ###                                                    ###
-### 1.1 - moved coronal equilibrium command to end of  ###
-###       command array so Cloudy gets it last.        ###
+### 1.2 - 6-20-06 - changed precision on cooling map   ###
+###       output from three digits to six.             ###
+###                                                    ###
+### 1.1 - 4-28-06 - moved coronal equilibrium command  ###
+###       to end of command array so Cloudy gets it    ###
+###       last.                                        ###
 ###                                                    ###
 ##########################################################
 ##########################################################
@@ -390,7 +394,7 @@ sub readParameterFile {
 	      if ($value =~ /^\./);
 	  $value =~ s/\s/\_/g;
 	  die "Output file prefix contains bad characters on line $lineNumber of $parameterFile.\n"
-	      if ($value =~ /\W/);
+	      if ($value =~ /[^\w\-]/);
 	  $outputFilePrefix = $value;
 	  undef $value;
       }
@@ -1625,7 +1629,7 @@ sub coolingMapMode {
 
 	    # output Te, heating, cooling, and mmw to file
 	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
-	    printf OUT "%.3e\t%.3e\t%.3e\t%.3f\n", $temperature, $heating, $cooling, $mmw;
+	    printf OUT "%.6e\t%.6e\t%.6e\t%.6f\n", $temperature, $heating, $cooling, $mmw;
 	    close (OUT);
 
 	    # append temp file contents to larger file, if someone wants to keep this stuff
