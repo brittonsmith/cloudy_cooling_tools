@@ -10,11 +10,14 @@
 #####################################################################
 
 # Version
-my $version = "1.4.2";
+my $version = "1.4.3";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.4.3 - 5-24-07 - fixed small bug in syncronized   ###
+###                   loops.                           ###
 ###                                                    ###
 ### 1.4.2 - 4-25-07 - decimal precision for cooling    ###
 ###                   maps now controlled by           ###
@@ -1132,7 +1135,7 @@ sub processCommands {
 		}
 
 		push @commands, $tempCommand;
-		$headerCommands[-1] .= "#\t$$tempCommand";
+		$headerCommands[-1] .= "#\t$tempCommand";
 	    }
 	    $headerCommands[-1] .= "# }\n";
 	}
