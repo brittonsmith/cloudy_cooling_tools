@@ -10,11 +10,19 @@
 #####################################################################
 
 # Version
-my $version = "1.4.3";
+my $version = "1.5";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.5 - 6-1-07 - when Cloudy crashes when running in ###
+###                parallel, child will now exit       ###
+###                properly so that the machine can    ###
+###                become available again.  Currently, ###
+###                this is only implemented in Cooling ###
+###                Map Mode, not Bare Mode or in the   ###
+###                template.                           ###
 ###                                                    ###
 ### 1.4.3 - 5-24-07 - fixed small bug in syncronized   ###
 ###                   loops.                           ###
@@ -1223,6 +1231,7 @@ sub runCloudy {
 #####################################################################
 ####################### runCloudyMode ###############################
 # call specific Cloudy mode subroutine
+# all the machinery for running in parallel is in here
 
 sub runCloudyMode {
     my ($runFileString,@loopCommands) = @_;
@@ -1393,8 +1402,14 @@ sub checkForCrash {
     # check last output line to see if Cloudy crashed
     if (!($lines[-1] =~ /Stop in maincl/) || ($lines[-1] =~ /return value is 1/)) {
 	$cloudyCrashed = 1;
-	die "Cloudy has crashed!  Check $outputFile for details.\n"
-	    if ($exitOnCrash);
+
+	# don't exit if running in parallel
+	# If child exits here, that machine will never be used again.
+	unless ($parallel) {
+	    die "Cloudy has crashed!  Check $outputFile for details.\n"
+		if ($exitOnCrash);
+	}
+
     }
 
     return ($cloudyCrashed,@warnings);
@@ -1758,6 +1773,13 @@ sub coolingMapMode {
 
 	# warn if there was a crash
 	if ($cloudyCrashed) {
+
+	    # if running in parallel and supposed to exit on crash, catch it here.
+	    if (($parallel) && ($exitOnCrash)) {
+		# return out of subroutine so child can exit properly
+		return;
+	    }
+
 	    printf "Cloudy crashed for T = %.3e of run $currentRunIndex.  If this continues, think about exiting.\n", $temperature;
 	}
 
