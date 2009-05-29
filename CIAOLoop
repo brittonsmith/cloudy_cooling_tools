@@ -10,11 +10,15 @@
 #####################################################################
 
 # Version
-my $version = "1.7";
+my $version = "1.8";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.8 - 3-3-08 - Fix emissivity map mode so the      ###
+###                spectrum rebinning is done          ###
+###                correctly.                          ###
 ###                                                    ###
 ### 1.7 - 1-27-08 - In parallel mode, added waitpid()  ###
 ###                 command when parent detects that   ###
@@ -287,12 +291,6 @@ my $emissivityMapEmin;
 # Maximum energy for emissivity map
 my $emissivityMapEmax;
 
-# Linear energy step for emissivity map
-my $emissivityMapdE;
-
-# Log energy step for emissivity map
-my $emissivityMapdLogE;
-
 # Number of energy points for emissivity map
 my $emissivityMapEpoints;
 
@@ -302,8 +300,11 @@ my $emissivityMapEnergyUnits = "Rydbergs";
 # Flag for log energy bins
 my $emissivityMapLogEnergyBins;
 
-# Energy values for emissivity map
+# Energy values for emissivity map (bin centers)
 my @emissivityMapEnergies;
+
+# Energy bin widths for emissivity map
+my @emissivityMapEnergyBins;
 
 # Decimal precision for emissivity in emissivity maps
 my $emissivityPrecision = 6;
@@ -964,30 +965,6 @@ sub readParameterFile {
 	  die "Invalid maximum energy given on line $lineNumber of $parameterFile.\n"
 	      if ($value < 0);
 	  $emissivityMapEmax = $value;
-      }
-
-      # get emissivityMapdE (energy step size)
-      elsif ($line =~ /^emissivityMapdE(\z|[\s\=])/i) {
-	  my (undef,$value) = split /=/, $line, 2;
-	  (undef,$value) = split " ", $line, 2 unless (defined($value));
-	  $value =~ s/^\s+//;
-	  die "No dE given on line $lineNumber of $parameterFile.\n"
-	      unless ($value);
-	  die "Invalid dE given on line $lineNumber of $parameterFile.\n"
-	      if ($value < 0);
-	  $emissivityMapdE = $value;
-      }
-
-      # get dLogE (energy step size)
-      elsif ($line =~ /^emissivityMapdLogE(\z|[\s\=])/i) {
-	  my (undef,$value) = split /=/, $line, 2;
-	  (undef,$value) = split " ", $line, 2 unless (defined($value));
-	  $value =~ s/^\s+//;
-	  die "No dE given on line $lineNumber of $parameterFile.\n"
-	      unless ($value);
-	  die "Invalid dE given on line $lineNumber of $parameterFile.\n"
-	      if ($value < 0);
-	  $emissivityMapdLogE = $value;
       }
 
       # get number of energy steps
@@ -2380,9 +2357,6 @@ sub loadMassData {
 #####################################################################
 ################## Emissivity Map Mode Subroutines ##################
 #####################################################################
-## These subroutines can be used as a template to create new custom 
-## Cloudy running modes.
-##
 ## CONTENTS ##
 ##
 ##    emissivityMapMode - similar to cooling map mode.  Loops over
@@ -2395,17 +2369,9 @@ sub loadMassData {
 ##                                  then does something similar to 
 ##                                  set up energy bins.
 ##
-##    getInterpolatedContinuum - takes continuum output by Cloudy,
-##                               which comes in a mesh whose range
-##                               cannot be altered, then uses
-##                               linear interpolation to create
-##                               a continuum over the user specified
-##                               range.
-##
 ##    getContinuum - gets continuum and energy bins from Cloudy
-##                   output file.
-##
-##    getRadius - gets radius from Cloudy output file.
+##                   output file.  Rebins Cloudy continuum to the 
+##                   user specified energy bins.
 
 #####################################################################
 ######################## emissivityMapMode ##########################
@@ -2420,6 +2386,7 @@ sub emissivityMapMode {
     my $outputFile = $keyName . ".cloudyOut";
     my $warningFile = $keyName . ".warnings";
     my $continuumFile = $keyName . ".continuum";
+    my $binFile = $keyName . ".bin";
     my $radiusFile = $keyName . ".radius";
     my $dataOutputFile = $keyName . ".dat";
 
@@ -2432,6 +2399,7 @@ sub emissivityMapMode {
 	$outputFile,
 	$warningFile,
 	$continuumFile,
+	$binFile,
 	$radiusFile,
 	$dataOutputFile;
     }
@@ -2465,6 +2433,7 @@ sub emissivityMapMode {
     my $tempInputFile = $inputFile . $tempFileSuffix;
     my $tempOutputFile = $outputFile . $tempFileSuffix;
     my $tempContinuumFile = $continuumFile . $tempFileSuffix;
+    my $tempBinFile = $binFile . $tempFileSuffix;
     my $tempRadiusFile = $radiusFile . $tempFileSuffix;
 
     # find user specified files hidden in commands and add temp suffix to their names
@@ -2511,11 +2480,12 @@ sub emissivityMapMode {
 	    push @runCommands, "coronal equilibrium T = $temperature linear\n";
 	}
 	else {
-	    push @runCommands, "constant temperature $temperature K\n";
+	    push @runCommands, "constant temperature $temperature K linear\n";
 	}
 
 	# add cooling map mode commands
-	push @runCommands, "punch last continuum units $emissivityMapEnergyUnits file = \"$tempContinuumFile\"\n";
+	push @runCommands, "punch last continuum file = \"$tempContinuumFile\"\n";
+	push @runCommands, "punch last continuum bins file = \"$tempBinFile\"\n";
 	push @runCommands, "punch last radius file = \"$tempRadiusFile\"\n";
 
 	# run Cloudy once or twice, depending on below
@@ -2548,38 +2518,14 @@ sub emissivityMapMode {
 	# if no crash, get the stuff we want
 	else {
 
-	    # get continuum, energies, and radius
-	    my ($energyPtr,$continuumPtr) = &getContinuum($tempContinuumFile);
-	    my $radius = &getRadius($tempRadiusFile);
-
-	    # get  frequencies from energies
-	    die "Units: $emissivityMapEnergyUnits unavailable for convertion.\n" 
-		unless (defined($energyConversion{$emissivityMapEnergyUnits}));
-	    my @frequencies = ();
-	    for (my $q = 0;$q < @$energyPtr;$q++) {
-		$frequencies[$q] = $$energyPtr[$q] / $energyConversion{$emissivityMapEnergyUnits};
-	    }
-
-	    # convert nuF_nu to F_nu
-	    for (my $q = 0;$q < @$continuumPtr;$q++) {
-		$$continuumPtr[$q] /= $frequencies[$q];
-	    }
-
-	    # linearly interpolate to get continuum in requested energy bins
-	    my @emissivityMapContinuum = &getInterpolatedContinuum($continuumPtr,$energyPtr,\@emissivityMapEnergies);
+	    # calculate continuum
+	    my @emissivityMapContinuum = &getContinuum($tempContinuumFile,$tempBinFile,$tempRadiusFile);
 
  	    # output Te and luminosities
  	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
  	    printf OUT "%.".$temperaturePrecision."e",$temperature;
 
 	    foreach (my $q = 0;$q < @emissivityMapContinuum;$q++) {
-
-		# this should give a emissivity in erg s^-1 Hz^-1 cm^-3.
-		$emissivityMapContinuum[$q] *= 3 / $radius;
-
-		# this will give nuF_nu to compare with the Cloudy output files.
-		# $emissivityMapContinuum[$q] *= $emissivityMapEnergies[$q] / $energyConversion{$emissivityMapEnergyUnits};
-
 		printf OUT "  %.".$emissivityPrecision."e",$emissivityMapContinuum[$q];
 	    }
 	    print OUT "\n";
@@ -2593,7 +2539,6 @@ sub emissivityMapMode {
 		&pushFile($inputFile,$tempInputFile,(sprintf "## Input for T = %.3e.\n", $temperature));
 		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output for T = %.3e.\n", $temperature));
  		&pushFile($continuumFile,$tempContinuumFile,(sprintf "## Continuum punch for T = %.3e.\n", $temperature));
- 		&pushFile($radiusFile,$tempRadiusFile,(sprintf "## Radius punch for T = %.3e.\n", $temperature));
 	    }
 
 	    # append user specified output files
@@ -2627,7 +2572,8 @@ sub emissivityMapMode {
     unlink $tempInputFile,
     $tempOutputFile,
     $tempContinuumFile,
-    $tempRadiusFile;
+    $tempBinFile;
+#    $tempRadiusFile;
 
     # delete user specified temp files
     foreach my $userFile (@userFiles) {
@@ -2654,180 +2600,180 @@ sub emissivityMapModeInitialize {
 	    push @emissivityMapEnergies, sprintf "%.6e",$line;
 	}
 	close (IN);
+
     }
 
     # If no file, get them from parameters
     else {
 
-	# check energy settings for sanity
-	die "emissivityMapdE and emissivityMapdLogE cannot both be set.\n"
-	    if (defined($emissivityMapdE) && defined($emissivityMapdLogE));
+	# Check for sufficient information.
+	die "Emissivity map energy lower bound not set.\n" unless ($emissivityMapEmin);
+	die "Emissivity map energy upper bound not set.\n" unless ($emissivityMapEmax);
+	die "Emissivity map number of bins not set.\n" unless ($emissivityMapEpoints);
 
-	my $EValuesSet = int(defined($emissivityMapEmin)) + 
-	    int(defined($emissivityMapEmax)) + 
-	    int(defined($emissivityMapdE) || defined($emissivityMapdLogE)) + 
-	    int(defined($emissivityMapEpoints));
+	my $energyStep;
 
-	die "Energy loop overdefined: set only three values.\n"
-	    if ($EValuesSet > 3);
-
-	die "Energy loop not defined properly for emissivity map mode.\n"
-	    if ($EValuesSet < 3);
-
-	# linear step specified
-	if (defined($emissivityMapdE)) {
-	    if (!(defined($emissivityMapEmin))) {
-		$emissivityMapEmin = $emissivityMapEmax - ($emissivityMapdE*($emissivityMapEpoints-1));
-	    }
-	    elsif (!(defined($emissivityMapEmax))) {
-		$emissivityMapEmax = $emissivityMapEmin + ($emissivityMapdE*($emissivityMapEpoints-1));
-	    }
-	    else {
-		$emissivityMapEpoints = ($emissivityMapEmax - $emissivityMapEmin)/$emissivityMapdE + 1;
-	    }
-	}
-	# log step specified
-	elsif (defined($emissivityMapdLogE)) {
-	    if (!(defined($emissivityMapEmin))) {
-		$emissivityMapEmin = $emissivityMapEmax / (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
-	    }
-	    elsif (!(defined($emissivityMapEmax))) {
-		$emissivityMapEmax = $emissivityMapEmin * (10**($emissivityMapdLogE*($emissivityMapEpoints-1)));
-	    }
-	    else {
-		$emissivityMapEpoints = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/$emissivityMapdLogE + 1;
-	    }
-	}
-	# no step specified, check the flag
-	else {
-	    # if only one point, just set something and go
-	    if ($emissivityMapEpoints == 1) {
-		# just make it something
-		$emissivityMapdLogE = 1;
-	    }
-	    # log bins
-	    elsif ($emissivityMapLogEnergyBins) {
-		$emissivityMapdLogE = log($emissivityMapEmax/$emissivityMapEmin)/log(10)/($emissivityMapEpoints-1);
-	    }
-	    # linear bins
-	    else {
-		$emissivityMapdE = ($emissivityMapEmax-$emissivityMapEmin)/($emissivityMapEpoints-1);
-	    }
-	}
-
-	# construct array of energy points
-	my $energy = $emissivityMapEmin;
-	my $endingCriterion = defined($emissivityMapdE) ? $emissivityMapEmax+0.5*$emissivityMapdE : $emissivityMapEmax*(10**(0.5*$emissivityMapdLogE));
-
-	while ($energy < $endingCriterion) {
-
-	    push @emissivityMapEnergies, (sprintf "%.6e",$energy);
-
-	    # increment energy
-	    if (defined($emissivityMapdE)) {
-		$energy += $emissivityMapdE;
-	    }
-	    else {
-		$energy *= 10**$emissivityMapdLogE;
-	    }
-	}
-
-    }
-
-}
-
-#####################################################################
-#################### getInterpolatedContinuum #######################
-# Linearly interpolate over continuum returned by Cloudy to get 
-# continuum in range requested by user.
-
-sub getInterpolatedContinuum {
-    my ($cloudyContinuumPtr,$cloudyEnergyPtr,$userEnergyPtr) = @_;
-
-    my @userContinuum;
-
-    for (my $q = 0;$q < @$userEnergyPtr;$q++) {
-
-	my $index;
-
-	# get index
-	if ($$userEnergyPtr[$q] <= $$cloudyEnergyPtr[0]) {
-	    $index = 0;
-	}
-	elsif ($$userEnergyPtr[$q] >= $$cloudyEnergyPtr[-2]) {
-	    $index = -2;
+	if ($emissivityMapLogEnergyBins) {
+	    $energyStep = log($emissivityMapEmax/$emissivityMapEmin)/(log(10) * $emissivityMapEpoints);
 	}
 	else {
-	    # bisection
-	    $index = 0;
-	    my $high = @$cloudyEnergyPtr - 1;
-	    my $mid;
-	    while ($high - $index > 1) {
-		$mid = int(($high + $index)/2);
-		if ($$userEnergyPtr[$q] >= $$cloudyEnergyPtr[$mid]) {
-		    $index = $mid;
-		}
-		else {
-		    $high = $mid;
-		}
-	    }
+	    $energyStep = ($emissivityMapEmax - $emissivityMapEmin) / $emissivityMapEpoints;
 	}
 
-	my $slope = ($$cloudyContinuumPtr[$index+1]-$$cloudyContinuumPtr[$index]) / 
-	    ($$cloudyEnergyPtr[$index+1]-$$cloudyEnergyPtr[$index]);
-
-	$userContinuum[$q] = $slope * ($$userEnergyPtr[$q]-$$cloudyEnergyPtr[$index]) +
-	    $$cloudyContinuumPtr[$index];
-
+	for (my $q = 0;$q < $emissivityMapEpoints;$q++) {
+	    if ($emissivityMapLogEnergyBins) {
+		push @emissivityMapEnergies, 10**($energyStep * ($q + 0.5) +
+						  log($emissivityMapEmin)/log(10));
+	    }
+	    else {
+		push @emissivityMapEnergies, $energyStep * ($q + 0.5) + $emissivityMapEmin;
+	    }
+	}
     }
 
-    return @userContinuum;
+    # calculate bin widths
+    for (my $q = 0;$q < @emissivityMapEnergies;$q++) {
+	if ($q == 0) {
+	    $emissivityMapEnergyBins[$q] = $emissivityMapEnergies[$q+1] - $emissivityMapEnergies[$q];
+	}
+	elsif ($q == @emissivityMapEnergies - 1) {
+	    $emissivityMapEnergyBins[$q] = $emissivityMapEnergies[$q] - $emissivityMapEnergies[$q-1];
+	}
+	else {
+	    $emissivityMapEnergyBins[$q] = 0.5 * ($emissivityMapEnergies[$q+1] - 
+						  $emissivityMapEnergies[$q-1]);
+	}
+    }
+
 }
 
 #####################################################################
 ########################## getContinuum #############################
-# Parse through Cloudy output file made with 'punch continuum' 
-# command.
+# Get Cloudy continuum and rebin to desired energy bins.
 
 sub getContinuum {
-    my ($continuumFile) = @_;
+    my ($continuumFile,$binFile,$radiusFile) = @_;
 
-    my @continuum;
-    my @energies;
+    # get Cloudy continuum
+    my @cloudyContinuum;
 
     open (IN,"<$continuumFile") or die "Couldn't open contiuum file, $continuumFile, for reading.\n";
     while (my $line = <IN>) {
 	if ($line !~ /^\s*\#/) {
 	    my @onLine = split /\t/,$line;
-	    push @energies, $onLine[0];
-	    push @continuum, $onLine[3];
+	    push @cloudyContinuum, $onLine[3];
 	}
     }
     close (IN);
 
-    return (\@energies,\@continuum);
-}
+    # get Cloudy energy bins
+    my @cloudyEnergies;
+    my @cloudyEnergyBins;
 
-#####################################################################
-############################ getRadius ##############################
-# Parse through Cloudy output file made with 'punch radius' 
-# command.
-
-sub getRadius {
-    my ($radiusFile) = @_;
-
-    my @radius;
-
-    open (IN,"<$radiusFile") or die "Couldn't open contiuum file, $radiusFile, for reading.\n";
+    open (IN,"<$binFile") or die "Couldn't open energy bin file, $binFile, for reading.\n";
     while (my $line = <IN>) {
 	if ($line !~ /^\s*\#/) {
-	    my @onLine = split /\t/,$line;
-	    push @radius, $onLine[1];
+	    chomp $line;
+	    $line =~ s/^\s+//;
+	    $line =~ s/\s+/ /g;
+	    my @onLine = split " ",$line;
+	    push @cloudyEnergies, $onLine[0];
+	    push @cloudyEnergyBins, $onLine[2];
 	}
     }
     close (IN);
 
-    return $radius[0];
+    # get radius
+    my $radius;
+    my $depth;
+    my $dr;
+
+    open (IN,"<$radiusFile") or die "Couldn't open contiuum file, $radiusFile, for reading.\n";
+  RAD: while (my $line = <IN>) {
+      if ($line !~ /^\s*\#/) {
+	  my @onLine = split /\t/,$line;
+	  $radius = $onLine[1];
+	  $depth = $onLine[2];
+	  $dr= $onLine[3];
+	  last RAD;
+      }
+  }
+    close (IN);
+
+    # get  frequencies from energies
+    die "Units: $emissivityMapEnergyUnits unavailable for conversion.\n" 
+	unless (defined($energyConversion{$emissivityMapEnergyUnits}));
+    my @cloudyFrequencies;
+    my @cloudyFrequencyBins;
+    for (my $q = 0;$q < @cloudyEnergies;$q++) {
+	$cloudyFrequencies[$q] = $cloudyEnergies[$q] / $energyConversion{"Rydbergs"};
+	$cloudyFrequencyBins[$q] = $cloudyEnergyBins[$q] / $energyConversion{"Rydbergs"};
+    }
+    my @emissivityMapFrequencies;
+    my @emissivityMapFrequencyBins;
+    for (my $q = 0;$q < @emissivityMapEnergies;$q++) {
+	$emissivityMapFrequencies[$q] = $emissivityMapEnergies[$q] / $energyConversion{$emissivityMapEnergyUnits};
+	$emissivityMapFrequencyBins[$q] = $emissivityMapEnergyBins[$q] / $energyConversion{$emissivityMapEnergyUnits};
+    }
+
+    # convert nuF_nu to F_nu
+    for (my $q = 0;$q < @cloudyEnergies;$q++) {
+	$cloudyContinuum[$q] /= $cloudyFrequencies[$q];
+    }
+
+    # calculate rebinned continuum
+    my @emissivityMapContinuum;
+    my $indexLower;
+    my $indexUpper;
+    my $gotLowerBound;
+
+    for (my $q = 0;$q < @emissivityMapFrequencies;$q++) {
+	# get lower and upper bound Cloudy bins
+	$gotLowerBound = 0;
+      BIN: for (my $w = 0;$w < @cloudyFrequencies;$w++) {
+	  if ($gotLowerBound) {
+	      if ($cloudyFrequencies[$w] + (0.5 * $cloudyFrequencyBins[$w]) >=
+		  $emissivityMapFrequencies[$q] + (0.5 * $emissivityMapFrequencyBins[$q])) {
+		  $indexUpper = $w;
+		  last BIN;
+	      }
+	  }
+	  else {
+	      if ($cloudyFrequencies[$w] - (0.5 * $cloudyFrequencyBins[$w]) > 
+		  $emissivityMapFrequencies[$q] - (0.5 * $emissivityMapFrequencyBins[$q])) {
+		  $indexLower = $w - 1;
+		  $gotLowerBound = 1;
+	      }
+	  }
+      }
+
+	# perform rebinning
+	my $binLower;
+	my $binUpper;
+	for (my $w = $indexLower;$w <=$indexUpper;$w++) {
+	    $binLower = ($emissivityMapFrequencies[$q] - (0.5 * $emissivityMapFrequencyBins[$q]) >
+			 $cloudyFrequencies[$w] - (0.5 * $cloudyFrequencyBins[$w])) ? 
+			 $emissivityMapFrequencies[$q] - (0.5 * $emissivityMapFrequencyBins[$q]) :
+			 $cloudyFrequencies[$w] - (0.5 * $cloudyFrequencyBins[$w]);
+
+	    $binUpper = ($emissivityMapFrequencies[$q] + (0.5 * $emissivityMapFrequencyBins[$q]) <
+			 $cloudyFrequencies[$w] + (0.5 * $cloudyFrequencyBins[$w])) ? 
+			 $emissivityMapFrequencies[$q] + (0.5 * $emissivityMapFrequencyBins[$q]) :
+			 $cloudyFrequencies[$w] + (0.5 * $cloudyFrequencyBins[$w]);
+
+	    $emissivityMapContinuum[$q] += $cloudyContinuum[$w] * ($binUpper - $binLower);
+	}
+	$emissivityMapContinuum[$q] /= $emissivityMapFrequencyBins[$q];
+
+	# convert to emissivity
+	# L = 4 pi r^2 F
+	# em = L / (4/3 pi ((r+dr)^3 - r^3)
+	$emissivityMapContinuum[$q] *= (3.0 * ($radius)**2) / 
+	    (($radius-$depth+$dr)**3 - ($radius-$depth)**3);
+
+    }
+
+    return @emissivityMapContinuum;
 }
 
 #####################################################################
