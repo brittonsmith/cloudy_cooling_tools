@@ -10,11 +10,15 @@
 #####################################################################
 
 # Version
-my $version = "1.4.1";
+my $version = "1.4.2";
 
 ##########################################################
 ####################### Change Log #######################
 ##########################################################
+###                                                    ###
+### 1.4.2 - 4-25-07 - decimal precision for cooling    ###
+###                   maps now controlled by           ###
+###                   variables.                       ###
 ###                                                    ###
 ### 1.4.1 - 4-05-07 - fixed precision on temperatures  ###
 ###                   in cooling maps.                 ###
@@ -33,6 +37,7 @@ my $version = "1.4.1";
 ###                                                    ###
 ### 1.2 - 6-20-06 - changed precision on cooling map   ###
 ###       output from three digits to six. (Line 1721) ###
+###       (Now obsolete.)                              ###
 ###                                                    ###
 ### 1.1 - 4-28-06 - moved coronal equilibrium command  ###
 ###       to end of command array so Cloudy gets it    ###
@@ -211,6 +216,18 @@ my $coolingMapH2FractionCritical = 2e-5;
 
 # H2 fraction table data
 my %coolingMapH2FractionTable;
+
+# decimal precision for temperature in cooling maps
+my $temperaturePrecision = 6;
+
+# decimal precision for heating in cooling maps
+my $heatingPrecision = 12;
+
+# decimal precision for cooling in cooling maps
+my $coolingPrecision = 12;
+
+# decimal precision for mean molecular weight in cooling maps
+my $mmwPrecision = 6;
 
 # atomic weights used for calculating mean molecular weights
 my @mass = ();
@@ -1760,7 +1777,9 @@ sub coolingMapMode {
 
 	    # output Te, heating, cooling, and mmw to file
 	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
-	    printf OUT "%.6e\t%.12e\t%.12e\t%.6f\n", $temperature, $heating, $cooling, $mmw;
+	    printf OUT "%.".$temperaturePrecision."e\t%.".
+		$heatingPrecision."e\t%.".$coolingPrecision."e\t%.".
+		$mmwPrecision."f\n", $temperature, $heating, $cooling, $mmw;
 	    close (OUT);
 
 	    # append temp file contents to larger file, if someone wants to keep this stuff
