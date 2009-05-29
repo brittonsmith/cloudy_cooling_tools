@@ -10,7 +10,18 @@
 #####################################################################
 
 # Version
-my $version = "1.0";
+my $version = "1.1";
+
+##########################################################
+####################### Change Log #######################
+##########################################################
+###                                                    ###
+### 1.1 - moved coronal equilibrium command to end of  ###
+###       command array so Cloudy gets it last.        ###
+###                                                    ###
+##########################################################
+##########################################################
+##########################################################
 
 use strict;
 use File::Glob;
@@ -1511,7 +1522,8 @@ sub coolingMapMode {
 
 	# add either constant temperature or coronal equilibrium command
 	if ($coronalEquilibrium >= 0) {
-	    $runCommands[$coronalEquilibrium] = "coronal equilibrium T = $temperature\n";
+	    delete $runCommands[$coronalEquilibrium];
+	    push @runCommands, "coronal equilibrium T = $temperature\n";
 	}
 	else {
 	    push @runCommands, "constant temperature $temperature K\n";
