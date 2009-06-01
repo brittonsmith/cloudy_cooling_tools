@@ -82,6 +82,10 @@ def graft_grid(input_lt,input_ht,outputFile,
 
     del data_ht
 
+    # Change dimension attribute.
+    for dataset in data_fields:
+        attributes_lt[dataset]["Dimension"]['value'][-1] = data_lt['Temperature'].size
+
     # Concatenate datasets.
     for dataset in data_fields:
         if redundant_point:
