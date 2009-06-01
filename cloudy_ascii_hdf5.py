@@ -9,6 +9,8 @@ intType = '>i4'
 def cloudyGrid_ascii2hdf5(runFile,outputFile):
     "Convert Cloudy cooling ascii data into hdf5."
 
+    print "Converting %s to %s." % (runFile,outputFile)
+
     if runFile[-4:] == '.run':
         prefix = runFile[0:-4]
     else:
