@@ -3,8 +3,8 @@ import numpy as na
 import re
 import copy
 
-floatType = '>f4'
-intType = '>i4'
+floatType = '>f8'
+intType = '>i8'
 
 def cloudyGrid_ascii2hdf5(runFile,outputFile):
     "Convert Cloudy cooling ascii data into hdf5."
