@@ -1,7 +1,7 @@
 import h5py
 import numpy as na
 
-dataTypes = {"<type 'float'>":'>f4',"<type 'int'>":'>i4'}
+dataTypes = {"<type 'float'>":'>f8',"<type 'int'>":'>i8'}
 
 def get_attributes(file):
     "Get all dataset attributes and their datatypes."
