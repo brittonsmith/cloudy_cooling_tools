@@ -80,7 +80,7 @@ def graft_grid(input_lt,input_ht,outputFile,
     else:
         data_lt['Temperature'] = na.concatenate((data_lt['Temperature'],data_ht['Temperature']))
 
-    attributes_lt['Temperature']["Dimension"]['value'] = data_lt['Temperature'].size
+    attributes_lt['Temperature']["Dimension"]['value'][0] = data_lt['Temperature'].size
     del data_ht
 
     # Change dimension attribute.
