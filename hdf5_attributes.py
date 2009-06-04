@@ -1,7 +1,7 @@
 import h5py
 import numpy as na
 
-dataTypes = {"<type 'float'>":'>f8',"<type 'int'>":'>i8'}
+dataTypes = {"<type 'float'>":'>f8',"<type 'int'>":'>i8',"<type 'long'>":'>i8'}
 
 def get_attributes(file):
     "Get all dataset attributes and their datatypes."
@@ -44,5 +44,8 @@ def write_attributes(output,attributes):
             if type(attributes[dataset][attribute]['value']) == na.ndarray:
                 output[dataset].attrs[attribute] = attributes[dataset][attribute]['value']
             else:
-                output[dataset].attrs[attribute] = na.array(attributes[dataset][attribute]['value'],
-                                                            dtype=attributes[dataset][attribute]['dtype'])
+                if type(attributes[dataset][attribute]['value']) == str:
+                    output[dataset].attrs[attribute] = attributes[dataset][attribute]['value']
+                else:
+                    output[dataset].attrs[attribute] = na.array(attributes[dataset][attribute]['value'],
+                                                                dtype=attributes[dataset][attribute]['dtype'])
