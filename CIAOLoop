@@ -4,7 +4,7 @@
 ############################# CIAOLoop ##############################
 ############# Cloudy Iterative Adaptively Organized Loop ############
 ###                         Britton Smith                         ###
-###                     britton@astro.psu.edu                     ###
+###                    britton.smit@colorado.edu                  ###
 ###                         January, 2006                         ###
 #####################################################################
 #####################################################################
@@ -258,11 +258,16 @@ my @loopCommands = ();
 my $parameterFile = "";
 
 while (my $arg = shift @ARGV) {
+
+  # print help
+  if ($arg =~ /^-h$/) {
+    &printHelp();
+  }
+
     # restart an incomplete run
     if ($arg =~ /^-r$/) {
 	$restart = 1;
     }
-
 
     # run in parallel
     elsif ($arg =~ /^-m$/) {
@@ -394,6 +399,8 @@ print "Run ended successfully at " . scalar (localtime) . "\n";
 #####################################################################
 ## CONTENTS ##
 ##
+##    printHelp - print helpful information on run time flags.
+##
 ##    readParameterFile - Read all parameters and commands from file
 ##
 ##    writeRunFileHeader - Write header for run file, containing 
@@ -447,6 +454,23 @@ print "Run ended successfully at " . scalar (localtime) . "\n";
 ##
 ##    pushFile - Appends contents of one file to another, adding 
 ##               contents of a string to the appended file.
+
+#####################################################################
+############################# printHelp #############################
+# Print flag information.
+
+sub printHelp {
+
+  print "CIAOLoop:\n";
+  print "Usage: ./CIAOLoop [flags] <parameter file>\n";
+  print "\t-h: print this help text.\n";
+  print "\t-m <filename>: supply machine file for running on multiple machines.\n";
+  print "\t-mp <this part> <total parts>: break run into parts to be run separately.\n";
+  print "\t-np <number of processors>: run on multiple cores on a single machine.\n";
+  print "\t-r: restart run from last file finished.\n";
+
+  exit(0);
+}
 
 #####################################################################
 ########################## readParameterFile ########################
