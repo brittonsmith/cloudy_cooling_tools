@@ -34,23 +34,26 @@ $| = 1;
 ###      B. Bare Mode Subroutine                       ###
 ###      C. Cooling Map Mode Subroutines               ###
 ###      D. Emissivity Map Mode Subroutines            ###
-###      E. Custom Cloudy Mode Subroutines             ###
+###      D. Ion Fraction Map Mode Subroutines          ###
+###      F. Custom Cloudy Mode Subroutines             ###
 ###                                                    ###
 ##########################################################
 ##########################################################
 ##########################################################
 
 # Modes for running Cloudy.
-my @cloudyRunModes = (\&bareMode,          # bare mode (just run Cloudy with commands provided)
-		      \&coolingMapMode,    # cooling map mode
-		      \&emissivityMapMode, # emissivity map mode
-		      \&newCustomMode);    # Your custom run mode here!
+my @cloudyRunModes = (\&bareMode,           # bare mode (just run Cloudy with commands provided)
+		      \&coolingMapMode,     # cooling map mode
+		      \&emissivityMapMode,  # emissivity map mode
+		      \&ionFractionMapMode, # ion fraction map mode
+		      \&newCustomMode);     # Your custom run mode here!
 
 # Initialization routines for the above running modes.
-my @initializeMode = (0,                             # no initialization required for bare mode
-		      \&coolingMapModeInitialize,    # set temperature ranges
-		      \&emissivityMapModeInitialize, # set temperature, energy ranges
-		      \&newCustomModeIntialize);     # Your custom mode initialization routine.
+my @initializeMode = (0,                              # no initialization required for bare mode
+		      \&coolingMapModeInitialize,     # set temperature ranges
+		      \&emissivityMapModeInitialize,  # set temperature, energy ranges
+		      \&ionFractionMapModeInitialize, # set temperature ranges
+		      \&newCustomModeIntialize);      # Your custom mode initialization routine.
 
 #####################################################################
 ################# Parameters and Global Variables ###################
@@ -234,6 +237,25 @@ my %energyConversion = ('MHz'  =>     1e-6,
 			'eV'   =>     4.1356668e-15,
 			'keV'  =>     4.1356668e-18,
 			'Rydbergs' => 3.04093147e-16);
+
+#####################################################################
+########### Emissivity Map Mode Parameters and Variables ############
+#####################################################################
+
+# Array of requested elements for ion fractions.
+my @ionFractionElements = ();
+
+# Float precision for oupput of log temperature.
+my $ionFractionLogTPrecition = 2;
+
+# Float precision for output of ion fraction vales.
+my $ionFractionPrecision = 3;
+
+# Hash of atomic numbers for elements.
+my %atomicNumber;
+
+# Hash of full atomic names.
+my %atomicName;
 
 #####################################################################
 #################### Command Storage Objects ########################
@@ -932,6 +954,19 @@ sub readParameterFile {
 	  die "emissivityMapLogEnergyBins must be either 0 or 1 on line $lineNumber of $parameterFile.\n"
 	      unless (($value == 0) || ($value == 1));
 	  $emissivityMapLogEnergyBins = $value;
+      }
+
+      ######################################
+      ## Ion Fraction Map Mode Parameters ##
+      ######################################
+
+      # get elements for ion fraction maps
+      elsif ($line =~ /^ionFractionElements(\z|[\s\=])/i) {
+	my (undef,$value) = split /=/, $line, 2;
+	(undef,$value) = split " ", $line, 2 unless (defined($value));
+	@ionFractionElements = split " ", $value;
+	die "No elements given for ion fraction tables on line $lineNumber of $parameterFile.\n" 
+	  unless (@ionFractionElements);
       }
 
       else {
@@ -1688,6 +1723,7 @@ sub coolingMapMode {
     unlink $inputFile if (-e $inputFile);
     unlink $outputFile if (-e $outputFile);
     unlink $coolingFile if (-e $coolingFile);
+    unlink $heatingFile if (-e $heatingFile);
     unlink $abundanceFile if (-e $abundanceFile);
     unlink $ionizationFile if (-e $ionizationFile);
     unlink $physicalConditionsFile if (-e $physicalConditionsFile);
@@ -2652,6 +2688,369 @@ sub getContinuum {
 #####################################################################
 #####################################################################
 
+
+#####################################################################
+################# Ion Fraction Map Mode Subroutines #################
+#####################################################################
+## CONTENTS ##
+##
+##    ionFractionMapMode - 
+##
+##    ionFractionMapModeInitialize - 
+##
+##    getIonFraction - 
+##
+
+#####################################################################
+####################### ionFractionMapMode ##########################
+# Run Cloudy, loop over specified temperature range, and produce tables
+# of ion fractions for specified elements.
+
+sub ionFractionMapMode {
+
+    # base name for output files
+    my $keyName = $outputDir . $outputFilePrefix . "_run" . $currentRunIndex;
+
+    # output files needed in cooling map mode
+    my $inputFile = $keyName . ".cloudyIn";
+    my $outputFile = $keyName . ".cloudyOut";
+    my $ionizationFile = $keyName . ".ionization";
+    my $warningFile = $keyName . ".warnings";
+
+    # suffix for temporary files
+    my $tempFileSuffix = ".temp";
+
+    # if this is a restart, and this is the interrupted file, delete old files
+    unlink $inputFile if (-e $inputFile);
+    unlink $outputFile if (-e $outputFile);
+    unlink $ionizationFile if (-e $ionizationFile);
+    unlink $warningFile if (-e $warningFile);
+
+    # process commands into simple list
+    my $commandsPointer;
+    my $headerCommandsPointer;
+    my $userFilesPointer;
+
+    ($commandsPointer,$headerCommandsPointer,$userFilesPointer) = &processCommands(@_);
+
+    # commands for this run
+    my @commands = @$commandsPointer;
+
+    # list of lines to throw into output file
+    my @headerCommands = @$headerCommandsPointer;
+
+    # list of user specified files
+    my @userFiles = @$userFilesPointer;
+
+    # check for a coronal equilibrium command
+    my $coronalEquilibrium = -1;
+  CHECK: for (my $q = 0;$q < @commands;$q++) {
+      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
+	  $coronalEquilibrium = $q;
+	  last CHECK;
+      }
+  }
+
+    # find h density value hidden in commands
+    my $hden;
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^hden /) {
+	$hden = $command;
+	$hden =~ s/hden//;
+	if ($hden =~ /linear/) {
+	  $hden =~ s/linear//;
+	}
+	elsif ($hden =~ /log/) {
+	  $hden =~ s/log//;
+	  $hden = 10**$hden;
+	}
+	else {
+	  $hden = 10**$hden;
+	}
+	last FIND;
+      }
+    }
+
+    # find metallicity value hidden in commands
+    my $metals;
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^metals /) {
+	$metals = $command;
+	$metals =~ s/metals//;
+	if ($metals =~ /linear/) {
+	  $metals =~ s/linear//;
+	}
+	elsif ($metals =~ /log/) {
+	  $metals =~ s/log//;
+	  $metals = 10**$metals;
+	}
+	last FIND;
+      }
+    }
+
+    # find command to specify electron fraction (not an actual cloudy command)
+    my $electronFractionCommand;
+    my $electronFactor = 9.153959e-3;
+    my $hydrogenMassFraction = 10. / 14.;
+    my $electronMetalFreeMax = (1 + $hydrogenMassFraction) / (2 * $hydrogenMassFraction);
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^metal free electron fraction (.+)$/) {
+	my $electronFraction = $1;
+	my $electronDensity = $electronFraction + log(($electronMetalFreeMax + ($electronFactor * $metals)) * $hden) / log(10);
+	$command = "set eden $electronDensity\n";
+	last FIND;
+      }
+    }
+
+    # temporary files
+    my $tempInputFile = $inputFile . $tempFileSuffix;
+    my $tempOutputFile = $outputFile . $tempFileSuffix;
+    my $tempIonizationFile = $ionizationFile . $tempFileSuffix;
+
+    # find user specified files hidden in commands and add temp suffix to their names
+    foreach my $command (@commands) {
+	if ($command =~ /\"(.+)\"/) {
+	    my $tempUserFile = $1 . $tempFileSuffix;
+	    $command =~ s/$1/$tempUserFile/;
+	}
+    }
+
+    # create files for each element requested
+    foreach my $element (@ionFractionElements) {
+      my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
+      unlink $dataOutputFile if (-e $outputFile);
+
+      # creat file header
+      open (OUT, ">$dataOutputFile") or die "Can't open $dataOutputFile to write the header.\n";
+      print OUT "# " . scalar (localtime) . "\n";
+      print OUT "#\n";
+      printf OUT "# %s Ion Fraction File\n", $atomicName{$element};
+      print OUT "#\n";
+      print OUT "# Loop values:\n";
+      print OUT @headerCommands;
+      print OUT "#\n";
+      print OUT "# Data Columns:\n";
+      print OUT "# log(Te [K])\n";
+      print OUT "# log(Ion Fractions)\n";
+      print OUT "#\n";
+      print OUT "#Te\t" . (join "\t", (1 .. $atomicNumber{$element}+1)) . "\n";
+      close (OUT);
+    }
+
+    # loop over specified temperature range, collecting heating, cooling, and ionization state
+    my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+$coolingMapdT  : $coolingMapTmax*(10**$coolingMapdLogT);
+
+    foreach my $temperature (@coolingMapTemperatures) {
+
+	$temperature = sprintf "%f", $temperature;
+
+	my @runCommands = @commands;
+
+	# add either constant temperature or coronal equilibrium command
+	if ($coronalEquilibrium >= 0) {
+	    delete $runCommands[$coronalEquilibrium];
+	    push @runCommands, "coronal equilibrium T = $temperature linear\n";
+	}
+	else {
+	    push @runCommands, "constant temperature $temperature K linear\n";
+	}
+
+	# add cooling map mode commands
+	push @runCommands, "punch last ionization means file = \"$tempIonizationFile\"\n";
+
+	# run Cloudy once or twice, depending on below
+	my $cloudyCrashed = 0;
+	my @warnings = ();
+
+	# run Cloudy and get warnings and crash flag
+	($cloudyCrashed,@warnings) = &runCloudy($tempInputFile,$tempOutputFile,@runCommands);
+
+	# if there were warnings, add them to a file
+	if (@warnings) {
+	    open (WARN, ">>$warningFile") or die "Couldn't open $warningFile to add warnings.\n";
+	    printf WARN "## Warnings produced for T = %.3e.\n", $temperature;
+	    print WARN @warnings;
+	    close (WARN);
+	}
+
+	# warn if there was a crash
+	if ($cloudyCrashed) {
+
+	    # if running in parallel and supposed to exit on crash, catch it here.
+	    if (($parallel) && ($exitOnCrash)) {
+		# return out of subroutine so child can exit properly
+		return;
+	    }
+
+	    printf "Cloudy crashed for T = %.3e of run $currentRunIndex.  If this continues, think about exiting.\n", $temperature;
+	}
+
+	# if no crash, get the stuff we want
+	else {
+
+	  # Get ion fractions from output file.
+	  my %ionFractions = &getIonFraction($tempIonizationFile);
+
+    foreach my $element (@ionFractionElements) {
+      my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
+
+      # Ouput ion fractions.
+      open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
+      printf OUT "%.".$ionFractionLogTPrecition."f", (log($temperature)/log(10));
+      for my $electron (0 .. $atomicNumber{$element}) {
+	if ($electron >= @{$ionFractions{$element}}) {
+	  $ionFractions{$element}[$electron] = -30.0;
+	}
+	printf OUT "\t%.".$ionFractionPrecision."f", $ionFractions{$element}[$electron];
+      }
+      print OUT "\n";
+      close (OUT);
+
+    }
+
+	    # append temp file contents to larger file, if someone wants to keep this stuff
+	    if ($saveCloudyOutputFiles) {
+		&pushFile($inputFile,$tempInputFile,(sprintf "## Input for T = %.3e.\n", $temperature));
+		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output for T = %.3e.\n", $temperature));
+		&pushFile($ionizationFile,$tempIonizationFile,(sprintf "## Ionization punch for T = %.3e.\n", $temperature));
+	    }
+
+	    # append user specified output files
+	    foreach my $userFile (@userFiles) {
+		&pushFile($userFile,"$userFile$tempFileSuffix",(sprintf "## User output punch for T = %.3e.\n",$temperature));
+	    }
+	}
+
+    } # end loop over temperature
+
+    # delete temp files
+    unlink $tempInputFile,
+    $tempOutputFile,
+    $tempIonizationFile,
+
+    # delete Cloudy input/output files
+    unlink $inputFile,$outputFile;
+
+    # delete user specified temp files
+    foreach my $userFile (@userFiles) {
+	unlink "$userFile$tempFileSuffix";
+    }
+
+}
+
+#####################################################################
+################### ionFractionMapModeInitialize ####################
+# Initialize ion fraction map mode by loading atomic mass data and 
+# creating temperature list.
+
+sub ionFractionMapModeInitialize {
+
+    # Use coolingMapModeInitialize to initialize temperatures.
+    &coolingMapModeInitialize();
+
+    # Load element data.
+    &loadElementData();
+
+    # Check for valid elements.
+    foreach my $element (@ionFractionElements) {
+      die "$element is not a valid element for ion fraction table." 
+	unless (exists($atomicNumber{$element}));
+    }
+
+}
+
+#####################################################################
+########################### getIonFraction ##########################
+# Parse through files made with 'punch ionization' command to get 
+# ion fractions.
+
+sub getIonFraction {
+    my ($ionizationFile) = @_;
+
+    # read ionization fractions from file
+    open (ION, "<$ionizationFile") or die "Couldn't open $ionizationFile for reading ionization states.\n";
+    my @lines = <ION>;
+    close (ION);
+    chomp @lines;
+
+    my $headerLength = -1;
+    for (my $q = 0;$q < @lines;$q++) {
+	if ($lines[$q] =~ /Hydrogen/) {
+	    $headerLength = $q;
+	    # don't leave loop because this information is printed for every iteration
+	    # and we want the last iteration
+	}
+    }
+
+    die "Ionization file, $ionizationFile, does not have proper format.\n" if ($headerLength < 0);
+
+    my $shell = 0;
+    my $species = 0;
+    my $target_element;
+    my %logIonFraction = ();
+    my @ionizationPointers = ();
+
+    # fill ionization fraction array
+    for (my $q = $headerLength;$q < @lines;$q++) {
+	if ($lines[$q] =~ /^\s*([a-zA-z]+)/) {
+	  my $element = $1;
+	  $species++;
+	  $shell = 0;
+	  $target_element = 0;
+	ATOM: foreach my $target (@ionFractionElements) {
+	    if ($element eq $atomicName{$target}) {
+	      $target_element = $target;
+	      @{$logIonFraction{$target_element}} = ();
+	      last ATOM;
+	    }
+	  }
+	}
+	substr $lines[$q], 0, 11, "";
+	
+	while ((my $fraction = substr $lines[$q],0,7,"") && ($shell <= $species)) {
+	  if ($target_element) {
+	    $logIonFraction{$target_element}[$shell] = $fraction;
+	    $shell++;
+	  }
+	}
+    }
+
+    return %logIonFraction;
+}
+
+#####################################################################
+#####################################################################
+#####################################################################
+
+#####################################################################
+########################### loadElementData #########################
+# Load element atomic number hash.
+
+sub loadElementData {
+
+%atomicNumber = ('H' => 1, 'He' => 2, 'Li' => 3,
+		 'Be' => 4, 'B' => 5, 'C' => 6,
+		 'N' => 7, 'O' => 8, 'F' => 9,
+		 'Ne' => 10, 'Na' => 11, 'Mg' => 12,
+		 'Al' => 13, 'Si' => 14, 'P' => 15,
+		 'S' => 16, 'Cl' => 17, 'Ar' => 18,
+		 'K' => 19, 'Ca' => 20, 'Sc' => 21,
+		 'Ti' => 22, 'V' => 23, 'Cr' => 24,
+		 'Mn' => 25, 'Fe' => 26, 'Co' => 27,
+		 'Ni' => 28, 'Cu' => 29, 'Zn' => 30);
+
+%atomicName = ('H' => 'Hydrogen', 'He' => 'Helium', 'Li' => 'Lithium',
+	       'Be' => 'Beryllium', 'B' => 'Boron', 'C' => 'Carbon',
+	       'N' => 'Nitrogen', 'O' => 'Oxygen', 'F' => 'Fluorine',
+	       'Ne' => 'Neon', 'Na' => 'Sodium', 'Mg' => 'Magnesium',
+	       'Al' => 'Aluminium', 'Si' => 'Silicon', 'P' => 'Phosphorus',
+	       'S' => 'Sulphur', 'Cl' => 'Chlorine', 'Ar' => 'Argon',
+	       'K' => 'Potassium', 'Ca' => 'Calcium', 'Sc' => 'Scandium',
+	       'Ti' => 'Titanium', 'V' => 'Vanadium', 'Cr' => 'Chromium',
+	       'Mn' => 'Manganese', 'Fe' => 'Iron', 'Co' => 'Cobalt',
+	       'Ni' => 'Nickel', 'Cu' => 'Copper', 'Zn' => 'Zinc');
+
+}
 
 #####################################################################
 ################### Custom Cloudy Mode Subroutines ##################
