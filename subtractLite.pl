@@ -15,6 +15,13 @@ $largeRunFile = shift @ARGV;
 $smallRunFile = shift @ARGV;
 $newRunFile = shift @ARGV;
 
+unless (($largeRunFile) && ($smallRunFile) && ($newRunFile)) {
+  die "Usage:
+\t./subtractLite.pl <run file 1> <run file 2> <new run file>
+\tsuch that: (new run file) = (run file 1) - (run file 2).
+"
+}
+
 $largeRunFile =~ /(\S+\/)/g;
 $largePrefix = $largeRunFile;
 $largePrefix =~ s/\.run$//;
