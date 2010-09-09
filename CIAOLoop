@@ -1844,9 +1844,15 @@ sub coolingMapMode {
     # loop over specified temperature range, collecting heating, cooling, and ionization state
     my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+$coolingMapdT  : $coolingMapTmax*(10**$coolingMapdLogT);
 
+    # heating, cooling, and mean molecular weight variables
+    my $heating;
+    my $cooling;
+    my $mmw;
+
     foreach my $temperature (@coolingMapTemperatures) {
 
 	$temperature = sprintf "%f", $temperature;
+	$cooling = $heating = $mmw = 0;
 
 	my @runCommands = @commands;
 
@@ -1899,7 +1905,7 @@ sub coolingMapMode {
 	    my ($hden,$eden) = &getPhysicalConditions($tempPhysicalConditionsFile);
 
 	    # get heating and cooling
-	    my ($heating,$cooling) = &getCooling($tempCoolingFile);
+	    ($heating,$cooling) = &getCooling($tempCoolingFile);
 
 	    # scale heating and cooling values
 	    my $scaleFactor;
@@ -1919,14 +1925,7 @@ sub coolingMapMode {
 
 	    # get ionization fractions
 	    # take molecules into account some day
-	    my $mmw = &getMeanMolecularWeight($tempAbundanceFile,$tempIonizationFile);
-
-	    # output Te, heating, cooling, and mmw to file
-	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
-	    printf OUT "%.".$temperaturePrecision."e\t%.".
-		$heatingPrecision."e\t%.".$coolingPrecision."e\t%.".
-		$mmwPrecision."f\n", $temperature, $heating, $cooling, $mmw;
-	    close (OUT);
+	    $mmw = &getMeanMolecularWeight($tempAbundanceFile,$tempIonizationFile);
 
 	    # append temp file contents to larger file, if someone wants to keep this stuff
 	    if ($saveCloudyOutputFiles) {
@@ -1936,14 +1935,23 @@ sub coolingMapMode {
 		&pushFile($heatingFile,$tempHeatingFile,(sprintf "## Heating punch for T = %.3e.\n", $temperature));
 		&pushFile($abundanceFile,$tempAbundanceFile,(sprintf "## Abundance punch for T = %.3e.\n", $temperature));
 		&pushFile($ionizationFile,$tempIonizationFile,(sprintf "## Ionization punch for T = %.3e.\n", $temperature));
-		&pushFile($physicalConditionsFile,$tempPhysicalConditionsFile,(sprintf "## Physical conditions punch for T = %.3e.\n", $temperature))
+		&pushFile($physicalConditionsFile,$tempPhysicalConditionsFile,
+			  (sprintf "## Physical conditions punch for T = %.3e.\n", $temperature))
 	    }
 
 	    # append user specified output files
 	    foreach my $userFile (@userFiles) {
-		&pushFile($userFile,"$userFile$tempFileSuffix",(sprintf "## User output punch for T = %.3e.\n",$temperature));
+		&pushFile($userFile,"$userFile$tempFileSuffix",
+			  (sprintf "## User output punch for T = %.3e.\n",$temperature));
 	    }
-	}
+	  }
+
+	# output Te, heating, cooling, and mmw to file
+	open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
+	printf OUT "%.".$temperaturePrecision."e\t%.".
+	  $heatingPrecision."e\t%.".$coolingPrecision."e\t%.".
+	    $mmwPrecision."f\n", $temperature, $heating, $cooling, $mmw;
+	close (OUT);
 
     } # end loop over temperature
 
