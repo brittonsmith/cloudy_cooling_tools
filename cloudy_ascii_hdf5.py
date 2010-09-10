@@ -1,3 +1,9 @@
+"""
+Britton Smith <brittonsmith@gmail.com>
+
+Routine for converting ascii Cloudy cooling data to hdf5.
+"""
+
 import h5py
 import numpy as na
 import re
@@ -63,8 +69,8 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
     gridData = []
     for q in range(totalRuns):
         mapFile = "%s_run%d.dat" % (prefix,(q+1))
-        indices = get_grid_indices(gridDimension,q)
-        loadMap(mapFile,gridDimension,indices,gridData)
+        indices = _get_grid_indices(gridDimension,q)
+        _loadMap(mapFile,gridDimension,indices,gridData)
 
     # Write out hdf5 file.
     output = h5py.File(outputFile,'w')
@@ -86,7 +92,7 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
 
     output.close()
 
-def loadMap(mapFile,gridDimension,indices,gridData):
+def _loadMap(mapFile,gridDimension,indices,gridData):
     "Read individual cooling map ascii file and fill data arrays."
 
     f = open(mapFile,'r')
@@ -119,7 +125,7 @@ def loadMap(mapFile,gridDimension,indices,gridData):
     gridData[2][tuple(indices)][:] = c
     gridData[3][tuple(indices)][:] = m
 
-def get_grid_indices(dims,index):
+def _get_grid_indices(dims,index):
     "Return indices with shape of dims corresponding to scalar index."
     indices = []
     dims.reverse()

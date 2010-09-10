@@ -1,24 +1,12 @@
+"""
+Britton Smith <brittonsmith@gmail.com>
+
+Routine for grafting together cooling datasets of different dimension.
+"""
+
 import h5py
 import numpy as na
 from hdf5_attributes import *
-
-def add_grid_dimension(grid,dimension,size):
-    "Add a dimension to the grid with duplicate data."
-
-    oldShape = grid.shape
-    newShape = list(oldShape)
-
-    newShape.reverse()
-    newShape.append(size)
-    newShape.reverse()
-
-    newGrid = na.zeros(newShape,dtype=grid.dtype)
-    newGrid[:] = grid
-
-    if dimension > 0:
-        newGrid = na.rollaxis(newGrid,0,dimension+1)
-
-    return newGrid
 
 def graft_grid(input_lt,input_ht,outputFile,
                data_fields=['Heating','Cooling','MMW'],
@@ -67,7 +55,7 @@ def graft_grid(input_lt,input_ht,outputFile,
 
     data_ht_new = {}
     for dataset in data_fields:
-        data_ht_new[dataset] = add_grid_dimension(data_ht[dataset],extra_dim,
+        data_ht_new[dataset] = _add_grid_dimension(data_ht[dataset],extra_dim,
                                                   (data_lt[dataset].shape)[extra_dim])
 
     # Remove redundant temperature point.
@@ -106,3 +94,21 @@ def graft_grid(input_lt,input_ht,outputFile,
         output.create_dataset(dataset,data=data_lt[dataset])
     write_attributes(output,attributes_lt)
     output.close()
+
+def _add_grid_dimension(grid,dimension,size):
+    "Add a dimension to the grid with duplicate data."
+
+    oldShape = grid.shape
+    newShape = list(oldShape)
+
+    newShape.reverse()
+    newShape.append(size)
+    newShape.reverse()
+
+    newGrid = na.zeros(newShape,dtype=grid.dtype)
+    newGrid[:] = grid
+
+    if dimension > 0:
+        newGrid = na.rollaxis(newGrid,0,dimension+1)
+
+    return newGrid

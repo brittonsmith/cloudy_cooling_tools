@@ -1,3 +1,9 @@
+"""
+Britton Smith <brittonsmith@gmail.com>
+
+Convenience routines for reading and writing hdf5 attributes.
+"""
+
 import h5py
 import numpy as na
 
