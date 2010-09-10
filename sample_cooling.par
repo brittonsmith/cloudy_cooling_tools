@@ -1,0 +1,109 @@
+###########################################################
+########### Sample Parameter File for CIAOLoop ############
+###########################################################
+
+###########################################################
+##################### Run parameters ######################
+
+# path to Cloudy executable
+# full path name required if running in parallel
+cloudyExe               = /home/britton/work/cloudy/cloudy05_07_06/cloudy05_07_06.exe
+
+# don't save raw output from Cloudy
+saveCloudyOutputFiles   = 0
+
+# exit if Cloudy crashes
+# Warning: If exitOnCrash is set to 0, the code can only be 
+#          stopped with a kill command or hitting ctr-c a lot.
+exitOnCrash             = 1
+
+# give this run a name
+outputFilePrefix        = cooling_run
+
+# output directory
+# full path required if running in parallel
+outputDir               = /home/britton/work/cooling/coolingCodes/cLoop/cooling_run
+
+# index of first run
+runStartIndex           = 1
+
+# this is not a test
+# Set this to 1 to produce only the run file.
+test                    = 0
+
+# select a run mode
+cloudyRunMode           = 1 # cooling map mode
+
+# Current Run Mode Options
+# 0: Bare Mode - just run Cloudy with no data processing
+# 1: Cooling Map Mode - create maps of heating and cooling vs. Te
+# 2: Emissivity Map Mode - frequency dependent maps
+# 3: New Custom Mode - placeholder for a new custom run mode
+
+############################################################
+################# Cooling Map Parameters ###################
+
+# minimum temperature
+coolingMapTmin = 50
+
+# maximum temperature
+coolingMapTmax = 5e7
+
+# number of steps (log space)
+coolingMapTpoints = 61
+
+# linear temperature step size
+#coolingMapdT (currently redundant)
+
+# log temperature step size
+#coolingMapdLogT (currently redundant)
+
+# scale factor for cooling/heating
+# 1: n_H^2
+# 2: n_H * n_e
+coolingScaleFactor = 1
+
+############################################################
+############ Commands to be executed every time ############
+
+command stop zone 1
+
+command iterate to convergence
+
+# this command requires a temperature argument in Cloudy
+# here no, because we will run it in a loop
+# cLoop will take care of that
+# COMMENT THIS OUT IF ADDING ANY RADIATION
+command coronal equilibrium
+
+# Further examples
+
+# we could add commands from a file, too
+#file someCommands.dat
+
+# have cloudy ouput files with unique names
+# The '$' will be replaced with a name given by the 
+# specified output prefix and the file number.
+#command punch map file = "$.map"
+
+#######################################################
+############# Commands to be looped over ##############
+
+loop [hden] (-8;8;1) # values given in for loop format
+
+loop [metals]  -8 -7 -6 -5 -4 -3 -2 # values given in a list
+
+# Further examples
+
+# add commands to be looped over in sets
+#loop {
+#	[this command] 0 2 4
+#	[that command] 1 3 5
+#}
+
+# have the value be inside the command
+# the command below would give this to Cloudy "f(nu) = -21 at 1 Ryd"
+#loop [f(nu) = * at 1 Ryd] -21 -22
+
+# loop over different files
+#file loop file1 file2 file3
