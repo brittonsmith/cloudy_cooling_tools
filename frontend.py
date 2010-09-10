@@ -5,7 +5,7 @@ A wrapper for the hdf5 cooling grid tools: convert, graft, and zero.
 
 """
 
-from hdf5_cooling_grid_tools import *
+from grid_tools import *
 import sys
 
 def convert(args):
