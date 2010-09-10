@@ -38,7 +38,8 @@ cloudyRunMode           = 1 # cooling map mode
 # 0: Bare Mode - just run Cloudy with no data processing
 # 1: Cooling Map Mode - create maps of heating and cooling vs. Te
 # 2: Emissivity Map Mode - frequency dependent maps
-# 3: New Custom Mode - placeholder for a new custom run mode
+# 3: Ionization Balance Map Mode - maps of ionization balance
+# 4: New Custom Mode - placeholder for a new custom run mode
 
 ############################################################
 ################# Cooling Map Parameters ###################

@@ -17,7 +17,7 @@ $newRunFile = shift @ARGV;
 
 unless (($largeRunFile) && ($smallRunFile) && ($newRunFile)) {
   die "Usage:
-\t./subtractLite.pl <run file 1> <run file 2> <new run file>
+\t./subtract_cooling_lite.pl <run file 1> <run file 2> <new run file>
 \tsuch that: (new run file) = (run file 1) - (run file 2).
 "
 }

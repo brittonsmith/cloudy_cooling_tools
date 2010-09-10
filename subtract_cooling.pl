@@ -1,15 +1,9 @@
 #! /usr/bin/perl
 
-$version = "1.1";
-
-if ($ARGV[0] =~ /^-v$/) {
-    print "subtractCooling.pl, version $version.\n";
-    exit;
-}
-elsif ($ARGV[0] =~ /^-d(\d*)$/) {
-    $debug =  $1 ? $1 : 1;
-    print "Debug is $debug\n";
-    shift @ARGV;
+if ($ARGV[0] =~ /^-d(\d*)$/) {
+  $debug =  $1 ? $1 : 1;
+  print "Debug is $debug\n";
+  shift @ARGV;
 }
 
 # autoflush STDOUT
@@ -27,6 +21,13 @@ $cloudyEdit = 1;
 $largeRunFile = shift @ARGV;
 $smallRunFile = shift @ARGV;
 $newRunFile = shift @ARGV;
+
+unless (($largeRunFile) && ($smallRunFile) && ($newRunFile)) {
+  die "Usage:
+\t./subtract_cooling.pl <run file 1> <run file 2> <new run file>
+\tsuch that: (new run file) = (run file 1) - (run file 2).
+"
+}
 
 $largeRunFile =~ /(\S+\/)/g;
 $largeBaseDir = $1;
