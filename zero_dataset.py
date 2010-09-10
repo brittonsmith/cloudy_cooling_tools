@@ -1,16 +1,22 @@
+"""
+Britton Smith <brittonsmith@gmail.com>
+
+Set all values in a dataset to zero.
+"""
+
 import h5py
 from hdf5_attributes import *
 
-def zero_dataset(inputFile,data_fields=['Heating','MMW'],outputFile=None):
+def zero_dataset(input_file,data_fields=['Heating','MMW'],output_file=None):
     "Set all values in a dataset to zero."
 
-    if outputFile is None:
-        outputFile = inputFile
+    if output_file is None:
+        output_file = input_file
 
     data = {}
 
-    print "Reading file: %s." % inputFile
-    input = h5py.File(inputFile,'r')
+    print "Reading file: %s." % input_file
+    input = h5py.File(input_file,'r')
     for dataset in input.listnames():
         data[dataset] = input[dataset].value
     attributes = get_attributes(input)
@@ -21,8 +27,8 @@ def zero_dataset(inputFile,data_fields=['Heating','MMW'],outputFile=None):
         data[dataset][:] = 0.0
 
 
-    print "Writing file: %s." % outputFile
-    output = h5py.File(outputFile,'w')
+    print "Writing file: %s." % output_file
+    output = h5py.File(output_file,'w')
     for dataset in data.keys():
         output.create_dataset(dataset,data=data[dataset])
     write_attributes(output,attributes)
