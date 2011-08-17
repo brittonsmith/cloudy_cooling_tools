@@ -65,6 +65,10 @@ my $cloudyExe = "./cloudy.exe";
 # First time run or a restart
 my $restart = 0;
 
+# A reprocess run (using existing data) 
+# or a run that will call Cloudy.
+my $reprocess_run = 0;
+
 # Restart Index
 my $restartIndex = 0;
 
@@ -318,6 +322,11 @@ while (my $arg = shift @ARGV) {
 									  ($numberMultiProcessors <= 0));
     }
 
+    # do not run cloudy, just reprocess existing output data
+    elsif ($arg =~ /^-x$/) {
+      $reprocess_run = 1;
+    }
+
     # get parameter file name
     else {
 	$parameterFile = glob($arg);
@@ -474,6 +483,10 @@ print "Run ended successfully at " . scalar (localtime) . "\n";
 ##                  read in an mpirun-like machine file to get list 
 ##                  of available machines.
 ##
+##    makeTempFile - If this is a reprocess run, make temp files 
+##                   from the stored data files for use in the 
+##                   post-processing.
+##
 ##    pushFile - Appends contents of one file to another, adding 
 ##               contents of a string to the appended file.
 
@@ -490,6 +503,7 @@ sub printHelp {
   print "\t-mp <this part> <total parts>: break run into parts to be run separately.\n";
   print "\t-np <number of processors>: run on multiple cores on a single machine.\n";
   print "\t-r: restart run from last file finished.\n";
+  print "\t-x: reprocess existing output data instead of running Cloudy.\n";
 
   exit(0);
 }
@@ -528,10 +542,14 @@ sub readParameterFile {
 	  $value =~ s/^\s+//;
 	  $value = glob($value);
 	  $value = "./" . $value unless ($value =~ /\//);
-	  die "No output file prefix given on line $lineNumber of $parameterFile.\n"
+
+	  # if this is a reprocess run, we don't care about the exe
+	  unless ($reprocess_run) {
+	    die "No output file prefix given on line $lineNumber of $parameterFile.\n"
 	      unless ($value);
-	  die "Invalid path to Cloudy executable specified on line $lineNumber of $parameterFile.\n"
+	    die "Invalid path to Cloudy executable specified on line $lineNumber of $parameterFile.\n"
 	      unless (-f $value);
+	  }
 	  $cloudyExe = $value;
 	  undef $value;
       }
@@ -1320,6 +1338,12 @@ sub processCommands {
 
 sub runCloudy {
     my ($inputFile,$outputFile,@commands) = @_;
+
+    # if this is a reprocess run, return success with no warnings
+    if ($reprocess_run) {
+      return (0, ());
+    }
+
     open (INPUT, ">$inputFile") or die "Could not open $inputFile for writing.\n";
     foreach my $command (@commands) {
 	print INPUT $command;
@@ -1575,11 +1599,62 @@ sub getMachines {
 }
 
 #####################################################################
+########################### makeTempFile ############################
+# Make temp files from already made data.
+
+sub makeTempFile {
+  my ($filename, $separator) = @_;
+
+  my $perm_file = $filename;
+  $perm_file =~ s/\.temp$//;
+
+  open (IN, "<$perm_file") or die "Could not open $perm_file to make temp file.\n";
+  my @lines = <IN>;
+  close (IN);
+
+  chomp $separator;
+  my $start_line = -1;
+  my $end_line = scalar @lines;
+  my $general_separator;
+
+ LINES: for (my $line = 0;$line < @lines;$line++) {
+    chomp $lines[$line];
+    if ($start_line >= 0) {
+      if ($lines[$line] =~ /^$general_separator/) {
+	$end_line = $line;
+	last LINES;
+      }
+    }
+    else {
+      my $result = index($lines[$line], $separator);
+      if ($result > 0) {
+	$start_line = $line;
+	$general_separator = substr $lines[$line], 0, $result;
+      }
+    }
+  }
+
+  if ($start_line < 0) {
+    die "Could not find section in $filename containing $separator";
+  }
+
+  open (OUT, ">$filename");
+  print OUT join "\n", @lines[($start_line+1) .. ($end_line-1)];
+  print OUT "\n";
+  close (OUT);
+}
+
+#####################################################################
 ############################# pushFile ##############################
 # Append contents of littleFile to bigFile with separator string.
 
 sub pushFile {
     my ($bigFile,$littleFile,$separator) = @_;
+
+    # don't do anything if this is a reprocess run
+    if ($reprocess_run) {
+      return;
+    }
 
     open (IN, "<$littleFile") or die "Couldn't open $littleFile to add it to $bigFile.\n";
     my @lines = <IN>;
@@ -2729,10 +2804,12 @@ sub ionFractionMapMode {
     my $tempFileSuffix = ".temp";
 
     # if this is a restart, and this is the interrupted file, delete old files
-    unlink $inputFile if (-e $inputFile);
-    unlink $outputFile if (-e $outputFile);
-    unlink $ionizationFile if (-e $ionizationFile);
-    unlink $warningFile if (-e $warningFile);
+    unless ($reprocess_run) {
+      unlink $inputFile if (-e $inputFile);
+      unlink $outputFile if (-e $outputFile);
+      unlink $ionizationFile if (-e $ionizationFile);
+      unlink $warningFile if (-e $warningFile);
+    }
 
     # process commands into simple list
     my $commandsPointer;
@@ -2845,7 +2922,7 @@ sub ionFractionMapMode {
       close (OUT);
     }
 
-    # loop over specified temperature range, collecting heating, cooling, and ionization state
+    # loop over specified temperature range, collecting ionization state
     my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+$coolingMapdT  : $coolingMapTmax*(10**$coolingMapdLogT);
 
     foreach my $temperature (@coolingMapTemperatures) {
@@ -2896,36 +2973,38 @@ sub ionFractionMapMode {
 	# if no crash, get the stuff we want
 	else {
 
+	  my $separator = sprintf "for T = %.3e.\n", $temperature;
+
 	  # Get ion fractions from output file.
-	  my %ionFractions = &getIonFraction($tempIonizationFile);
+	  my %ionFractions = &getIonFraction($tempIonizationFile, $separator);
 
-    foreach my $element (@ionFractionElements) {
-      my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
+	  foreach my $element (@ionFractionElements) {
+	    my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
 
-      # Ouput ion fractions.
-      open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
-      printf OUT "%.".$ionFractionLogTPrecition."f", (log($temperature)/log(10));
-      for my $electron (0 .. $atomicNumber{$element}) {
-	if ($electron >= @{$ionFractions{$element}}) {
-	  $ionFractions{$element}[$electron] = -30.0;
-	}
-	printf OUT "\t%.".$ionFractionPrecision."f", $ionFractions{$element}[$electron];
-      }
-      print OUT "\n";
-      close (OUT);
+	    # Ouput ion fractions.
+	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
+	    printf OUT "%.".$ionFractionLogTPrecition."f", (log($temperature)/log(10));
+	    for my $electron (0 .. $atomicNumber{$element}) {
+	      if ($electron >= @{$ionFractions{$element}}) {
+		$ionFractions{$element}[$electron] = -30.0;
+	      }
+	      printf OUT "\t%.".$ionFractionPrecision."f", $ionFractions{$element}[$electron];
+	    }
+	    print OUT "\n";
+	    close (OUT);
 
-    }
+	  }
 
 	    # append temp file contents to larger file, if someone wants to keep this stuff
 	    if ($saveCloudyOutputFiles) {
-		&pushFile($inputFile,$tempInputFile,(sprintf "## Input for T = %.3e.\n", $temperature));
-		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output for T = %.3e.\n", $temperature));
-		&pushFile($ionizationFile,$tempIonizationFile,(sprintf "## Ionization punch for T = %.3e.\n", $temperature));
+		&pushFile($inputFile,$tempInputFile,(sprintf "## Input %s", $separator));
+		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output %s", $separator));
+		&pushFile($ionizationFile,$tempIonizationFile,(sprintf "## Ionization punch %s", $separator));
 	    }
 
 	    # append user specified output files
 	    foreach my $userFile (@userFiles) {
-		&pushFile($userFile,"$userFile$tempFileSuffix",(sprintf "## User output punch for T = %.3e.\n",$temperature));
+		&pushFile($userFile,"$userFile$tempFileSuffix",(sprintf "## User output punch %s", $separator));
 	    }
 	}
 
@@ -2973,7 +3052,12 @@ sub ionFractionMapModeInitialize {
 # ion fractions.
 
 sub getIonFraction {
-    my ($ionizationFile) = @_;
+    my ($ionizationFile, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+      &makeTempFile($ionizationFile, $separator);
+    }
 
     # read ionization fractions from file
     open (ION, "<$ionizationFile") or die "Couldn't open $ionizationFile for reading ionization states.\n";
