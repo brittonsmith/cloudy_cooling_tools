@@ -2255,11 +2255,12 @@ sub getMeanMolecularWeight {
     my @ionizationPointers = ();
 
     # fill ionization fraction array
-    for (my $q = $headerLength;$q < @lines;$q++) {
+  ION: for (my $q = $headerLength;$q < @lines;$q++) {
 	if ($lines[$q] =~ /^\s*[a-zA-z]+/) {
 	    $species++;
 	    $shell = 0;
 	}
+	last ION unless ($lines[$q]);
 	substr $lines[$q], 0, 11, "";
 	
 	while ((my $fraction = substr $lines[$q],0,7,"") && ($shell <= $species)) {
