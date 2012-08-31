@@ -41,6 +41,7 @@ Usage: ./CIAOLoop [flags] <parameter file>
         -mp <this part> <total parts>: break run into parts to be run separately.
         -np <number of processors>: run on multiple cores on a single machine.
         -r: restart run from last file finished.
+        -x: reprocess existing output data instead of running Cloudy.
 
 For restarts, the code will go through the previously made 
 run file, and restart the last map on the list.
