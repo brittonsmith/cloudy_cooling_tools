@@ -1795,15 +1795,17 @@ sub coolingMapMode {
     my $tempFileSuffix = ".temp";
 
     # if this is a restart, and this is the interrupted file, delete old files
-    unlink $inputFile if (-e $inputFile);
-    unlink $outputFile if (-e $outputFile);
-    unlink $coolingFile if (-e $coolingFile);
-    unlink $heatingFile if (-e $heatingFile);
-    unlink $abundanceFile if (-e $abundanceFile);
-    unlink $ionizationFile if (-e $ionizationFile);
-    unlink $physicalConditionsFile if (-e $physicalConditionsFile);
-    unlink $warningFile if (-e $warningFile);
-    unlink $dataOutputFile if (-e $dataOutputFile);
+    unless ($reprocess_run) {
+	unlink $inputFile if (-e $inputFile);
+	unlink $outputFile if (-e $outputFile);
+	unlink $coolingFile if (-e $coolingFile);
+	unlink $heatingFile if (-e $heatingFile);
+	unlink $abundanceFile if (-e $abundanceFile);
+	unlink $ionizationFile if (-e $ionizationFile);
+	unlink $physicalConditionsFile if (-e $physicalConditionsFile);
+	unlink $warningFile if (-e $warningFile);
+	unlink $dataOutputFile if (-e $dataOutputFile);
+    }
 
     # process commands into simple list
     my $commandsPointer;
@@ -1976,11 +1978,16 @@ sub coolingMapMode {
 
 	# if no crash, get the stuff we want
 	else {
+	    # Create the separator string for combining all the output files.
+	    my $separator = sprintf "for T = %.3e.\n", $temperature;
+
 	    # get H and e- number density
-	    my ($hden,$eden) = &getPhysicalConditions($tempPhysicalConditionsFile);
+	    my ($hden,$eden) = &getPhysicalConditions($tempPhysicalConditionsFile,
+						      $separator);
 
 	    # get heating and cooling
-	    ($heating,$cooling) = &getCooling($tempCoolingFile);
+	    ($heating,$cooling) = &getCooling($tempCoolingFile,
+					      $separator);
 
 	    # scale heating and cooling values
 	    my $scaleFactor;
@@ -2000,7 +2007,8 @@ sub coolingMapMode {
 
 	    # get ionization fractions
 	    # take molecules into account some day
-	    $mmw = &getMeanMolecularWeight($tempAbundanceFile,$tempIonizationFile);
+	    $mmw = &getMeanMolecularWeight($tempAbundanceFile,$tempIonizationFile,
+					   $separator);
 
 	    # append temp file contents to larger file, if someone wants to keep this stuff
 	    if ($saveCloudyOutputFiles) {
@@ -2133,7 +2141,13 @@ sub coolingMapModeInitialize {
 # and return total heating and cooling.
 
 sub getCooling {
-    my ($coolingFile) = @_;
+    my ($coolingFile, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+      &makeTempFile($coolingFile, $separator);
+    }
+
     open (COOL, "<$coolingFile") or die "Couldn't open $coolingFile to get cooling.\n";
     my @lines = <COOL>;
     close (COOL);
@@ -2153,7 +2167,13 @@ sub getCooling {
 # contribution of requested radiative process.
 
 sub getCoolingContribution {
-    my ($coolingFile,$coolingComponent) = @_;
+    my ($coolingFile,$coolingComponent, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+      &makeTempFile($coolingFile, $separator);
+    }
+
     open (COOL, "<$coolingFile") or die "Couldn't open $coolingFile to get cooling.\n";
     my @lines = <COOL>;
     close (COOL);
@@ -2179,7 +2199,13 @@ sub getCoolingContribution {
 # contribution of requested radiative process.
 
 sub getHeatingContribution {
-    my ($heatingFile,$heatingComponent) = @_;
+    my ($heatingFile,$heatingComponent, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+      &makeTempFile($heatingFile, $separator);
+    }
+
     open (COOL, "<$heatingFile") or die "Couldn't open $heatingFile to get heating.\n";
     my @lines = <COOL>;
     close (COOL);
@@ -2205,7 +2231,13 @@ sub getHeatingContribution {
 # conditions' command and return H density and electron density.
 
 sub getPhysicalConditions {
-    my ($physicalConditionsFile) = @_;
+    my ($physicalConditionsFile, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+      &makeTempFile($physicalConditionsFile, $separator);
+    }
+
     open (PHYS, "<$physicalConditionsFile") or die 
 	"Couldn't open $physicalConditionsFile to get physicalConditions.\n";
     my @lines = <PHYS>;
@@ -2223,7 +2255,13 @@ sub getPhysicalConditions {
 # mean molecular weight.
 
 sub getMeanMolecularWeight {
-    my ($abundanceFile,$ionizationFile) = @_;
+    my ($abundanceFile,$ionizationFile, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+      &makeTempFile($abundanceFile, $separator);
+      &makeTempFile($ionizationFile, $separator);
+    }
 
     # read abundances from file
     open (ABUND, "<$abundanceFile") or die "Could not open $abundanceFile for reading abundances.\n";
