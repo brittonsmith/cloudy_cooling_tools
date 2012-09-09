@@ -190,7 +190,7 @@ my @coolingMapTemperatures;
 my $coolingScaleFactor = 1;
 
 # decimal precision for temperature in cooling maps
-my $temperaturePrecision = 6;
+my $temperaturePrecision = 4;
 
 # decimal precision for heating in cooling maps
 my $heatingPrecision = 6;
@@ -1635,13 +1635,16 @@ sub makeTempFile {
   }
 
   if ($start_line < 0) {
-    die "Could not find section in $filename containing $separator";
+      print "Could not find section in $filename containing $separator.\n";
+      return 1;
   }
 
   open (OUT, ">$filename");
   print OUT join "\n", @lines[($start_line+1) .. ($end_line-1)];
   print OUT "\n";
   close (OUT);
+
+  return 0;
 }
 
 #####################################################################
@@ -1964,6 +1967,16 @@ sub coolingMapMode {
 	    close (WARN);
 	}
 
+        # Create the separator string for combining all the output files.
+        my $separator = sprintf "for T = %.3e.\n", $temperature;
+
+        # Look for a crash in a reprocess run.
+        if ($reprocess_run) {
+            if (&makeTempFile($tempPhysicalConditionsFile, $separator)) {
+                $cloudyCrashed = 1;
+            }
+        }
+
 	# warn if there was a crash
 	if ($cloudyCrashed) {
 
@@ -1978,9 +1991,6 @@ sub coolingMapMode {
 
 	# if no crash, get the stuff we want
 	else {
-	    # Create the separator string for combining all the output files.
-	    my $separator = sprintf "for T = %.3e.\n", $temperature;
-
 	    # get H and e- number density
 	    my ($hden,$eden) = &getPhysicalConditions($tempPhysicalConditionsFile,
 						      $separator);
