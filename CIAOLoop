@@ -1127,7 +1127,7 @@ sub recurse {
 	    else {
 		recurse($runFileString,@commands);
 	    }
-	    $runFileString =~ s/$addToString$//;
+            $runFileString = substr $runFileString, 0, -length($addToString);
 	}
     }
 
