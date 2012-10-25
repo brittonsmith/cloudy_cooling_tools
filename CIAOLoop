@@ -190,7 +190,7 @@ my @coolingMapTemperatures;
 my $coolingScaleFactor = 1;
 
 # decimal precision for temperature in cooling maps
-my $temperaturePrecision = 4;
+my $temperaturePrecision = 6;
 
 # decimal precision for heating in cooling maps
 my $heatingPrecision = 6;
