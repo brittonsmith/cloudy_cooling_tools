@@ -1895,14 +1895,6 @@ sub coolingMapMode {
     my $tempIonizationFile = $ionizationFile . $tempFileSuffix;
     my $tempPhysicalConditionsFile = $physicalConditionsFile . $tempFileSuffix;
 
-    # find user specified files hidden in commands and add temp suffix to their names
-    foreach my $command (@commands) {
-	if ($command =~ /\"(.+)\"/) {
-	    my $tempUserFile = $1 . $tempFileSuffix;
-	    $command =~ s/$1/$tempUserFile/;
-	}
-    }
-
     # create file header
     open (OUT, ">$dataOutputFile") or die "Can't open $dataOutputFile to write the header.\n";
     print OUT "# " . scalar (localtime) . "\n";
