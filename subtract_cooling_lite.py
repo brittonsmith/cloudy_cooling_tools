@@ -473,10 +473,12 @@ sub readMap {
 	else {
 	    chomp $line;
 	    my @onLine = split /\t/,$line;
-	    push @$tePtr, $onLine[0];
-	    push @$heatingPtr, $onLine[1];
-	    push @$coolingPtr, $onLine[2];
-	    push @$mmwPtr, $onLine[3];
+            unless (($onLine[1] == 0) && ($onLine[2] == 0) && ($onLine[3] == 0)) {
+                push @$tePtr, $onLine[0];
+                push @$heatingPtr, $onLine[1];
+                push @$coolingPtr, $onLine[2];
+                push @$mmwPtr, $onLine[3];
+            }
 	}
     }
     close (MAP);
