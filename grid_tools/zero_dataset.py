@@ -17,7 +17,7 @@ def zero_dataset(input_file,data_fields=['Heating','MMW'],output_file=None):
 
     print "Reading file: %s." % input_file
     input = h5py.File(input_file,'r')
-    for dataset in input.listnames():
+    for dataset in input.keys():
         data[dataset] = input[dataset].value
     attributes = get_attributes(input)
     input.close()
