@@ -23,12 +23,12 @@ def get_attributes(file,datasets=None):
         closeFile = True
 
     if datasets is None:
-        datasets = input.listnames()
+        datasets = input.keys()
 
     # Get all dataset attributes.
     for dataset in datasets:
         attributes[dataset] = {}
-        for attribute in input[dataset].attrs.listnames():
+        for attribute in input[dataset].attrs.keys():
             attributes[dataset][attribute] = {}
             if type(input[dataset].attrs[attribute]) == na.ndarray:
                 attributes[dataset][attribute]['dtype'] = input[dataset].attrs[attribute].dtype
