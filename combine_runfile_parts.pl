@@ -1,7 +1,6 @@
 #! /usr/bin/perl
 
-$inputPartFile = shift @ARGV;
-die "Usage:
+$inputPartFile = shift @ARGV or die "Usage:
 \t./combine_runfile_parts.pl <run part file (just one of them)>\n";
 
 if ($inputPartFile =~ /\.part\d+\_(\d+)$/) {
