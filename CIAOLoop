@@ -2418,6 +2418,7 @@ sub emissivityMapMode {
     my $outputFile = $keyName . ".cloudyOut";
     my $warningFile = $keyName . ".warnings";
     my $continuumFile = $keyName . ".continuum";
+    my $physicalConditionsFile = $keyName . ".physical";
     my $binFile = $keyName . ".bin";
     my $radiusFile = $keyName . ".radius";
     my $dataOutputFile = $keyName . ".dat";
@@ -2426,11 +2427,12 @@ sub emissivityMapMode {
     my $tempFileSuffix = ".temp";
 
     # if this is a restart, and this is the interrupted file, delete old files
-    if (($restart) && ($restartIndex == $currentRunIndex)) {
+    unless ($reprocess_run) {
 	unlink $inputFile,
 	$outputFile,
 	$warningFile,
 	$continuumFile,
+        $physicalConditionsFile,
 	$binFile,
 	$radiusFile,
 	$dataOutputFile;
@@ -2465,6 +2467,7 @@ sub emissivityMapMode {
     my $tempInputFile = $inputFile . $tempFileSuffix;
     my $tempOutputFile = $outputFile . $tempFileSuffix;
     my $tempContinuumFile = $continuumFile . $tempFileSuffix;
+    my $tempPhysicalConditionsFile = $physicalConditionsFile . $tempFileSuffix;
     my $tempBinFile = $binFile . $tempFileSuffix;
     my $tempRadiusFile = $radiusFile . $tempFileSuffix;
 
@@ -2487,17 +2490,18 @@ sub emissivityMapMode {
     print OUT "#\n";
     print OUT "# Data Columns:\n";
     print OUT "# Te [K]\n";
-    print OUT "# Emissivity [erg s^-1 cm^-3]\n";
+    print OUT "# Emissivity [erg s^-1 cm^3]\n";
     print OUT "#\n";
     print OUT "#E [$emissivityMapEnergyUnits]      " . join "  ",@emissivityMapEnergies;
     print OUT "\n";
-    print OUT "#Te           L\n";
+    print OUT "#Te            em\n";
     close (OUT);
 
     # loop over specified temperature range, collecting heating, cooling, and ionization state
     my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+$coolingMapdT  : $coolingMapTmax*(10**$coolingMapdLogT);
 
     # used to write inverted data file
+    my $scaleFactor;
     my @emissivityData = ();
 
     foreach my $temperature (@coolingMapTemperatures) {
@@ -2517,6 +2521,7 @@ sub emissivityMapMode {
 
 	# add cooling map mode commands
 	push @runCommands, "punch last continuum file = \"$tempContinuumFile\"\n";
+	push @runCommands, "punch last physical conditions file = \"$tempPhysicalConditionsFile\"\n";
 	push @runCommands, "punch last continuum bins file = \"$tempBinFile\"\n";
 	push @runCommands, "punch last radius file = \"$tempRadiusFile\"\n";
 
@@ -2535,6 +2540,16 @@ sub emissivityMapMode {
 	    close (WARN);
 	}
 
+        # Create the separator string for combining all the output files.
+        my $separator = sprintf "for T = %.3e.\n", $temperature;
+
+        # Look for a crash in a reprocess run.
+        if ($reprocess_run) {
+            if (&makeTempFile($tempPhysicalConditionsFile, $separator)) {
+                $cloudyCrashed = 1;
+            }
+        }
+
 	# warn if there was a crash
 	if ($cloudyCrashed) {
 
@@ -2549,16 +2564,31 @@ sub emissivityMapMode {
 
 	# if no crash, get the stuff we want
 	else {
+	    # get H and e- number density
+	    my ($hden,$eden) = &getPhysicalConditions($tempPhysicalConditionsFile,
+						      $separator);
+
+	    # scale heating and cooling values
+	    if ($coolingScaleFactor == 1) {
+		$scaleFactor = $hden * $hden;
+	    }
+	    elsif ($coolingScaleFactor == 2) {
+		$scaleFactor = $hden * $eden;
+	    }
+	    else {
+		die "Error: coolingScaleFactor must be either 1 or 2.\n";
+	    }
 
 	    # calculate continuum
-	    my @emissivityMapContinuum = &getContinuum($tempContinuumFile,$tempBinFile,$tempRadiusFile);
+	    my @emissivityMapContinuum = &getContinuum($tempContinuumFile,$tempBinFile,
+                                                       $tempRadiusFile, $separator);
 
- 	    # output Te and luminosities
+ 	    # output Te and emissivities
  	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
  	    printf OUT "%.".$temperaturePrecision."e",$temperature;
 
 	    foreach (my $q = 0;$q < @emissivityMapContinuum;$q++) {
-		printf OUT "  %.".$emissivityPrecision."e",$emissivityMapContinuum[$q];
+		printf OUT "  %.".$emissivityPrecision."e",($emissivityMapContinuum[$q] / $scaleFactor);
 	    }
 	    print OUT "\n";
  	    close (OUT);
@@ -2571,6 +2601,10 @@ sub emissivityMapMode {
 		&pushFile($inputFile,$tempInputFile,(sprintf "## Input for T = %.3e.\n", $temperature));
 		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output for T = %.3e.\n", $temperature));
  		&pushFile($continuumFile,$tempContinuumFile,(sprintf "## Continuum punch for T = %.3e.\n", $temperature));
+                &pushFile($physicalConditionsFile,$tempPhysicalConditionsFile,
+			  (sprintf "## Physical conditions punch for T = %.3e.\n", $temperature));
+                &pushFile($binFile, $tempBinFile, (sprintf "## Continuum bin punch for T = %.3e.\n", $temperature));
+                &pushFile($radiusFile, $tempRadiusFile, (sprintf "## Radius punch for T = %.3e.\n", $temperature));
 	    }
 
 	    # append user specified output files
@@ -2590,11 +2624,11 @@ sub emissivityMapMode {
 	printf OUT "  %.".$temperaturePrecision."e",$temperature;
     }
     print OUT "\n";
-    print OUT "#E            L\n";
+    print OUT "#E            L_nu\n";
     for (my $q = 0;$q < @emissivityMapEnergies;$q++) {
 	printf OUT "%.".$emissivityPrecision."e",$emissivityMapEnergies[$q];
 	for (my $w = 0;$w < @coolingMapTemperatures;$w++) {
-	    printf OUT "  %.".$emissivityPrecision."e",$emissivityData[$w][$q];
+	    printf OUT "  %.".$emissivityPrecision."e",($emissivityData[$w][$q] / $scaleFactor);
 	}
 	print OUT "\n";
     }
@@ -2604,8 +2638,9 @@ sub emissivityMapMode {
     unlink $tempInputFile,
     $tempOutputFile,
     $tempContinuumFile,
-    $tempBinFile;
-#    $tempRadiusFile;
+    $tempPhysicalConditionsFile,
+    $tempBinFile,
+    $tempRadiusFile;
 
     # delete user specified temp files
     foreach my $userFile (@userFiles) {
@@ -2684,7 +2719,14 @@ sub emissivityMapModeInitialize {
 # Get Cloudy continuum and rebin to desired energy bins.
 
 sub getContinuum {
-    my ($continuumFile,$binFile,$radiusFile) = @_;
+    my ($continuumFile,$binFile,$radiusFile, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+        &makeTempFile($continuumFile, $separator);
+        &makeTempFile($binFile, $separator);
+        &makeTempFile($radiusFile, $separator);
+    }
 
     # get Cloudy continuum
     my @cloudyContinuum;
@@ -2732,7 +2774,7 @@ sub getContinuum {
   }
     close (IN);
 
-    # get  frequencies from energies
+    # get frequencies from energies
     die "Units: $emissivityMapEnergyUnits unavailable for conversion.\n" 
 	unless (defined($energyConversion{$emissivityMapEnergyUnits}));
     my @cloudyFrequencies;
@@ -2763,18 +2805,19 @@ sub getContinuum {
 	# get lower and upper bound Cloudy bins
 	$gotLowerBound = 0;
       BIN: for (my $w = 0;$w < @cloudyFrequencies;$w++) {
+	  unless ($gotLowerBound) {
+	      if ($cloudyFrequencies[$w] - (0.5 * $cloudyFrequencyBins[$w]) > 
+		  $emissivityMapFrequencies[$q] - (0.5 * $emissivityMapFrequencyBins[$q])) {
+		  $indexLower = $w - 1;
+		  $gotLowerBound = 1;
+	      }
+	  }
+
 	  if ($gotLowerBound) {
 	      if ($cloudyFrequencies[$w] + (0.5 * $cloudyFrequencyBins[$w]) >=
 		  $emissivityMapFrequencies[$q] + (0.5 * $emissivityMapFrequencyBins[$q])) {
 		  $indexUpper = $w;
 		  last BIN;
-	      }
-	  }
-	  else {
-	      if ($cloudyFrequencies[$w] - (0.5 * $cloudyFrequencyBins[$w]) > 
-		  $emissivityMapFrequencies[$q] - (0.5 * $emissivityMapFrequencyBins[$q])) {
-		  $indexLower = $w - 1;
-		  $gotLowerBound = 1;
 	      }
 	  }
       }
