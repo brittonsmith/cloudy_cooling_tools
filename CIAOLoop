@@ -1609,7 +1609,11 @@ sub makeTempFile {
   $perm_file =~ s/\.temp$//;
 
   open (IN, "<$perm_file") or die "Could not open $perm_file to make temp file.\n";
-  my @lines = <IN>;
+  my @lines;
+  # trying to read directly into the array was hanging
+  while (my $line = <IN>) {
+      push @lines, $line;
+  }
   close (IN);
 
   chomp $separator;
