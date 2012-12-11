@@ -2494,7 +2494,7 @@ sub emissivityMapMode {
     print OUT "#\n";
     print OUT "# Data Columns:\n";
     print OUT "# Te [K]\n";
-    print OUT "# Emissivity [erg s^-1 cm^3]\n";
+    print OUT "# Emissivity [erg s^-1 cm^3 Hz^-1]\n";
     print OUT "#\n";
     print OUT "#E [$emissivityMapEnergyUnits]      " . join "  ",@emissivityMapEnergies;
     print OUT "\n";
