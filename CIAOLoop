@@ -35,6 +35,7 @@ $| = 1;
 ###      C. Cooling Map Mode Subroutines               ###
 ###      D. Emissivity Map Mode Subroutines            ###
 ###      D. Ion Fraction Map Mode Subroutines          ###
+###      E. Line Map Mode Subroutines                  ###
 ###      F. Custom Cloudy Mode Subroutines             ###
 ###                                                    ###
 ##########################################################
@@ -46,13 +47,15 @@ my @cloudyRunModes = (\&bareMode,           # bare mode (just run Cloudy with co
 		      \&coolingMapMode,     # cooling map mode
 		      \&emissivityMapMode,  # emissivity map mode
 		      \&ionFractionMapMode, # ion fraction map mode
+                      \&lineMapMode,        # line emissivity map mode
 		      \&newCustomMode);     # Your custom run mode here!
 
 # Initialization routines for the above running modes.
 my @initializeMode = (0,                              # no initialization required for bare mode
 		      \&coolingMapModeInitialize,     # set temperature ranges
 		      \&emissivityMapModeInitialize,  # set temperature, energy ranges
-		      \&ionFractionMapModeInitialize, # set temperature ranges
+		      \&ionFractionMapModeInitialize, # set temperature ranges, elements
+                      \&lineMapModeInitialize,        # set temperature ranges, ion labels
 		      \&newCustomModeIntialize);      # Your custom mode initialization routine.
 
 #####################################################################
@@ -243,14 +246,14 @@ my %energyConversion = ('MHz'  =>     1e-6,
 			'Rydbergs' => 3.04093147e-16);
 
 #####################################################################
-########### Emissivity Map Mode Parameters and Variables ############
+########## Ion Fraction Map Mode Parameters and Variables ###########
 #####################################################################
 
 # Array of requested elements for ion fractions.
 my @ionFractionElements = ();
 
-# Float precision for oupput of log temperature.
-my $ionFractionLogTPrecition = 2;
+# Float precision for output of log temperature.
+my $ionFractionLogTPrecision = 2;
 
 # Float precision for output of ion fraction vales.
 my $ionFractionPrecision = 3;
@@ -260,6 +263,16 @@ my %atomicNumber;
 
 # Hash of full atomic names.
 my %atomicName;
+
+#####################################################################
+############### Line Map Mode Parameters and Variables ##############
+#####################################################################
+
+# Array of lines for which to get emissivities.
+my @lineMapLines = ();
+
+# Array of ascii friendlier line labels.
+my @lineMapLineLabels = ();
 
 #####################################################################
 #################### Command Storage Objects ########################
@@ -986,6 +999,19 @@ sub readParameterFile {
 	die "No elements given for ion fraction tables on line $lineNumber of $parameterFile.\n" 
 	  unless (@ionFractionElements);
       }
+
+      ##############################
+      ## Line Map Mode Parameters ##
+      ##############################
+
+      # get lines for line map mode
+
+      elsif ($line =~ /^lineMapLine(\z|[\s\=])/i) {
+	my (undef,$value) = split /=/, $line, 2;
+        die "No line given with lineMapLine command.\n" unless defined($value);
+        $value =~ s/^\s*//;
+        push @lineMapLines, $value;
+      }      
 
       else {
 	  die "Unrecognized line: $line on line $lineNumber of $parameterFile.\n";
@@ -3071,7 +3097,7 @@ sub ionFractionMapMode {
 
 	    # Ouput ion fractions.
 	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
-	    printf OUT "%.".$ionFractionLogTPrecition."f", (log($temperature)/log(10));
+	    printf OUT "%.".$ionFractionLogTPrecision."f", (log($temperature)/log(10));
 	    for my $electron (0 .. $atomicNumber{$element}) {
 	      if ($electron >= @{$ionFractions{$element}}) {
 		$ionFractions{$element}[$electron] = -30.0;
@@ -3203,34 +3229,236 @@ sub getIonFraction {
 #####################################################################
 
 #####################################################################
-########################### loadElementData #########################
-# Load element atomic number hash.
+##################### Line Map Mode Subroutines #####################
+#####################################################################
+## CONTENTS ##
+##
+##    lineMapMode - 
+##
+##    lineMapModeInitialize - 
+##
+##    getLineEmissivities - 
+##
 
-sub loadElementData {
+#####################################################################
+####################### lineMapMode ##########################
+# Run Cloudy, loop over specified temperature range, and produce tables
+# of line emissivities for specified lines.
 
-%atomicNumber = ('H' => 1, 'He' => 2, 'Li' => 3,
-		 'Be' => 4, 'B' => 5, 'C' => 6,
-		 'N' => 7, 'O' => 8, 'F' => 9,
-		 'Ne' => 10, 'Na' => 11, 'Mg' => 12,
-		 'Al' => 13, 'Si' => 14, 'P' => 15,
-		 'S' => 16, 'Cl' => 17, 'Ar' => 18,
-		 'K' => 19, 'Ca' => 20, 'Sc' => 21,
-		 'Ti' => 22, 'V' => 23, 'Cr' => 24,
-		 'Mn' => 25, 'Fe' => 26, 'Co' => 27,
-		 'Ni' => 28, 'Cu' => 29, 'Zn' => 30);
+sub lineMapMode {
 
-%atomicName = ('H' => 'Hydrogen', 'He' => 'Helium', 'Li' => 'Lithium',
-	       'Be' => 'Beryllium', 'B' => 'Boron', 'C' => 'Carbon',
-	       'N' => 'Nitrogen', 'O' => 'Oxygen', 'F' => 'Fluorine',
-	       'Ne' => 'Neon', 'Na' => 'Sodium', 'Mg' => 'Magnesium',
-	       'Al' => 'Aluminium', 'Si' => 'Silicon', 'P' => 'Phosphorus',
-	       'S' => 'Sulphur', 'Cl' => 'Chlorine', 'Ar' => 'Argon',
-	       'K' => 'Potassium', 'Ca' => 'Calcium', 'Sc' => 'Scandium',
-	       'Ti' => 'Titanium', 'V' => 'Vanadium', 'Cr' => 'Chromium',
-	       'Mn' => 'Manganese', 'Fe' => 'Iron', 'Co' => 'Cobalt',
-	       'Ni' => 'Nickel', 'Cu' => 'Copper', 'Zn' => 'Zinc');
+    # base name for output files
+    my $keyName = $outputDir . $outputFilePrefix . "_run" . $currentRunIndex;
+
+    # output files needed in cooling map mode
+    my $inputFile = $keyName . ".cloudyIn";
+    my $outputFile = $keyName . ".cloudyOut";
+    my $lineFile = $keyName . ".lines";
+    my $warningFile = $keyName . ".warnings";
+    my $dataOutputFile = $keyName . ".dat";
+
+    # suffix for temporary files
+    my $tempFileSuffix = ".temp";
+
+    # if this is a restart, and this is the interrupted file, delete old files
+    unless ($reprocess_run) {
+	unlink $inputFile if (-e $inputFile);
+	unlink $outputFile if (-e $outputFile);
+	unlink $lineFile if (-e $lineFile);
+	unlink $warningFile if (-e $warningFile);
+	unlink $dataOutputFile if (-e $dataOutputFile);
+    }
+
+    # process commands into simple list
+    my $commandsPointer;
+    my $headerCommandsPointer;
+    my $userFilesPointer;
+
+    ($commandsPointer,$headerCommandsPointer,$userFilesPointer) = &processCommands(@_);
+
+    # commands for this run
+    my @commands = @$commandsPointer;
+
+    # list of lines to throw into output file
+    my @headerCommands = @$headerCommandsPointer;
+
+    # list of user specified files
+    my @userFiles = @$userFilesPointer;
+
+    # check for a coronal equilibrium command
+    my $coronalEquilibrium = -1;
+  CHECK: for (my $q = 0;$q < @commands;$q++) {
+      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
+	  $coronalEquilibrium = $q;
+	  last CHECK;
+      }
+  }
+
+    # temporary files
+    my $tempInputFile = $inputFile . $tempFileSuffix;
+    my $tempOutputFile = $outputFile . $tempFileSuffix;
+    my $tempLineFile = $lineFile . $tempFileSuffix;
+
+    # add emissivity commands
+    push @commands, "save last lines, emissivity \"$tempLineFile\"\n";
+    foreach my $line (@lineMapLines) {
+        push @commands, "$line\n";
+    }
+    push @commands, "end of lines\n";
+
+    # create file header
+    open (OUT, ">$dataOutputFile") or die "Can't open $dataOutputFile to write the header.\n";
+    print OUT "# " . scalar (localtime) . "\n";
+    print OUT "#\n";
+    print OUT "# Cooling Map File\n";
+    print OUT "#\n";
+    print OUT "# Loop values:\n";
+    print OUT @headerCommands;
+    print OUT "#\n";
+    print OUT "# Data Columns:\n";
+    print OUT "# log10 Te [K]\n";
+    print OUT "# log10 Emissivities [erg s^-1 cm^-3]\n";
+    print OUT "#\n";
+    print OUT "#Te   ";
+    print OUT join "  ", @lineMapLineLabels;
+    print OUT "\n";
+    close (OUT);
+
+    # loop over specified temperature range, collecting heating, cooling, and ionization state
+    my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+$coolingMapdT  : $coolingMapTmax*(10**$coolingMapdLogT);
+
+    foreach my $temperature (@coolingMapTemperatures) {
+
+	$temperature = sprintf "%f", $temperature;
+
+	my @runCommands = @commands;
+
+	# add either constant temperature or coronal equilibrium command
+	if ($coronalEquilibrium >= 0) {
+	    delete $runCommands[$coronalEquilibrium];
+	    push @runCommands, "coronal equilibrium T = $temperature linear\n";
+	}
+	else {
+	    push @runCommands, "constant temperature $temperature K linear\n";
+	}
+
+	# run Cloudy once or twice, depending on below
+	my $cloudyCrashed = 0;
+	my @warnings = ();
+
+	# run Cloudy and get warnings and crash flag
+	($cloudyCrashed,@warnings) = &runCloudy($tempInputFile,$tempOutputFile,@runCommands);
+
+	# if there were warnings, add them to a file
+	if (@warnings) {
+	    open (WARN, ">>$warningFile") or die "Couldn't open $warningFile to add warnings.\n";
+	    printf WARN "## Warnings produced for T = %.3e.\n", $temperature;
+	    print WARN @warnings;
+	    close (WARN);
+	}
+
+        # Create the separator string for combining all the output files.
+        my $separator = sprintf "for T = %.3e.\n", $temperature;
+
+	# warn if there was a crash
+	if ($cloudyCrashed) {
+
+	    # if running in parallel and supposed to exit on crash, catch it here.
+	    if (($parallel) && ($exitOnCrash)) {
+		# return out of subroutine so child can exit properly
+		return;
+	    }
+
+	    printf "Cloudy crashed for T = %.3e of run $currentRunIndex.  If this continues, think about exiting.\n", $temperature;
+	}
+
+	# if no crash, get the stuff we want
+	else {
+
+	    # append temp file contents to larger file, if someone wants to keep this stuff
+	    if ($saveCloudyOutputFiles) {
+		&pushFile($inputFile,$tempInputFile,(sprintf "## Input for T = %.3e.\n", $temperature));
+		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output for T = %.3e.\n", $temperature));
+		&pushFile($lineFile,$tempLineFile,(sprintf "## Line punch for T = %.3e.\n", $temperature));
+	    }
+
+	    # append user specified output files
+	    foreach my $userFile (@userFiles) {
+		&pushFile($userFile,"$userFile$tempFileSuffix",
+			  (sprintf "## User output punch for T = %.3e.\n",$temperature));
+	    }
+	  }
+
+        my @line_emissivities = &getLineEmissivities($tempLineFile, (sprintf "## Line punch for T = %.3e.\n", $temperature));
+
+	# output Te, line emissivities to file.
+	open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
+        printf OUT "%.".$ionFractionLogTPrecision."f  ", (log($temperature)/log(10));
+        print OUT join "  ", @line_emissivities;
+        print OUT "\n";
+	close (OUT);
+
+    } # end loop over temperature
+
+    # delete temp files
+    unlink $tempInputFile,
+    $tempOutputFile,
+    $tempLineFile;
+
+    # delete Cloudy input/output files
+    unlink $inputFile,$outputFile;
+
+    # delete user specified temp files
+    foreach my $userFile (@userFiles) {
+	unlink "$userFile$tempFileSuffix";
+    }
 
 }
+
+#####################################################################
+####################### lineMapModeInitialize #######################
+# Initialize line map mode by loading creating temperature list and 
+# labels for the lines.
+
+sub lineMapModeInitialize {
+
+    # Use coolingMapModeInitialize to initialize temperatures.
+    &coolingMapModeInitialize();
+
+    # Create more ascii friendly line labels.
+    foreach my $line (@lineMapLines) {
+        $line =~ s/\s/_/g;
+        push @lineMapLineLabels, $line;
+    }
+
+}
+
+#####################################################################
+####################### getLineEmissivities #########################
+# Parse through Cloudy output file made with 
+# 'save lines emissivity' command and return them
+
+sub getLineEmissivities {
+    my ($lineFile, $separator) = @_;
+
+    # if this is a reprocess run, create a temp file from the data
+    if ($reprocess_run) {
+      &makeTempFile($lineFile, $separator);
+    }
+
+    open (COOL, "<$lineFile") or die "Couldn't open $lineFile to get line emissivities.\n";
+    my @lines = <COOL>;
+    close (COOL);
+
+    chomp $lines[-1];
+    my (undef, @le) = split /\t/, $lines[-1];
+
+    return @le;
+}
+
+#####################################################################
+#####################################################################
+#####################################################################
 
 #####################################################################
 ################### Custom Cloudy Mode Subroutines ##################
@@ -3290,5 +3518,39 @@ sub newCustomMode {
 sub newCustomModeInitialize {
 
     # Initialize your custom mode.
+
+}
+
+#####################################################################
+#####################################################################
+#####################################################################
+
+#####################################################################
+########################### loadElementData #########################
+# Load element atomic number hash.
+
+sub loadElementData {
+
+%atomicNumber = ('H' => 1, 'He' => 2, 'Li' => 3,
+		 'Be' => 4, 'B' => 5, 'C' => 6,
+		 'N' => 7, 'O' => 8, 'F' => 9,
+		 'Ne' => 10, 'Na' => 11, 'Mg' => 12,
+		 'Al' => 13, 'Si' => 14, 'P' => 15,
+		 'S' => 16, 'Cl' => 17, 'Ar' => 18,
+		 'K' => 19, 'Ca' => 20, 'Sc' => 21,
+		 'Ti' => 22, 'V' => 23, 'Cr' => 24,
+		 'Mn' => 25, 'Fe' => 26, 'Co' => 27,
+		 'Ni' => 28, 'Cu' => 29, 'Zn' => 30);
+
+%atomicName = ('H' => 'Hydrogen', 'He' => 'Helium', 'Li' => 'Lithium',
+	       'Be' => 'Beryllium', 'B' => 'Boron', 'C' => 'Carbon',
+	       'N' => 'Nitrogen', 'O' => 'Oxygen', 'F' => 'Fluorine',
+	       'Ne' => 'Neon', 'Na' => 'Sodium', 'Mg' => 'Magnesium',
+	       'Al' => 'Aluminium', 'Si' => 'Silicon', 'P' => 'Phosphorus',
+	       'S' => 'Sulphur', 'Cl' => 'Chlorine', 'Ar' => 'Argon',
+	       'K' => 'Potassium', 'Ca' => 'Calcium', 'Sc' => 'Scandium',
+	       'Ti' => 'Titanium', 'V' => 'Vanadium', 'Cr' => 'Chromium',
+	       'Mn' => 'Manganese', 'Fe' => 'Iron', 'Co' => 'Cobalt',
+	       'Ni' => 'Nickel', 'Cu' => 'Copper', 'Zn' => 'Zinc');
 
 }
