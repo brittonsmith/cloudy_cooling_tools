@@ -3254,6 +3254,7 @@ sub lineMapMode {
     my $inputFile = $keyName . ".cloudyIn";
     my $outputFile = $keyName . ".cloudyOut";
     my $lineFile = $keyName . ".lines";
+    my $physicalConditionsFile = $keyName . ".physical";
     my $warningFile = $keyName . ".warnings";
     my $dataOutputFile = $keyName . ".dat";
 
@@ -3265,6 +3266,7 @@ sub lineMapMode {
 	unlink $inputFile if (-e $inputFile);
 	unlink $outputFile if (-e $outputFile);
 	unlink $lineFile if (-e $lineFile);
+        unlink $physicalConditionsFile if (-e $physicalConditionsFile);
 	unlink $warningFile if (-e $warningFile);
 	unlink $dataOutputFile if (-e $dataOutputFile);
     }
@@ -3298,13 +3300,7 @@ sub lineMapMode {
     my $tempInputFile = $inputFile . $tempFileSuffix;
     my $tempOutputFile = $outputFile . $tempFileSuffix;
     my $tempLineFile = $lineFile . $tempFileSuffix;
-
-    # add emissivity commands
-    push @commands, "save last lines, emissivity \"$tempLineFile\"\n";
-    foreach my $line (@lineMapLines) {
-        push @commands, "$line\n";
-    }
-    push @commands, "end of lines\n";
+    my $tempPhysicalConditionsFile = $physicalConditionsFile . $tempFileSuffix;
 
     # create file header
     open (OUT, ">$dataOutputFile") or die "Can't open $dataOutputFile to write the header.\n";
@@ -3317,7 +3313,7 @@ sub lineMapMode {
     print OUT "#\n";
     print OUT "# Data Columns:\n";
     print OUT "# log10 Te [K]\n";
-    print OUT "# log10 Emissivities [erg s^-1 cm^-3]\n";
+    print OUT "# log10 Emissivities / n_H^2 [erg s^-1 cm^3]\n";
     print OUT "#\n";
     print OUT "#Te   ";
     print OUT join "  ", @lineMapLineLabels;
@@ -3330,6 +3326,7 @@ sub lineMapMode {
     foreach my $temperature (@coolingMapTemperatures) {
 
 	$temperature = sprintf "%f", $temperature;
+        my @line_emissivities = ();
 
 	my @runCommands = @commands;
 
@@ -3341,6 +3338,14 @@ sub lineMapMode {
 	else {
 	    push @runCommands, "constant temperature $temperature K linear\n";
 	}
+
+        # add emissivity commands
+        push @runCommands, "save last lines, emissivity \"$tempLineFile\"\n";
+        foreach my $line (@lineMapLines) {
+            push @runCommands, "$line\n";
+        }
+        push @runCommands, "end of lines\n";
+        push @runCommands, "punch last physical conditions file = \"$tempPhysicalConditionsFile\"\n";
 
 	# run Cloudy once or twice, depending on below
 	my $cloudyCrashed = 0;
@@ -3360,6 +3365,13 @@ sub lineMapMode {
         # Create the separator string for combining all the output files.
         my $separator = sprintf "for T = %.3e.\n", $temperature;
 
+        # Look for a crash in a reprocess run.
+        if ($reprocess_run) {
+            if (&makeTempFile($tempPhysicalConditionsFile, $separator)) {
+                $cloudyCrashed = 1;
+            }
+        }
+
 	# warn if there was a crash
 	if ($cloudyCrashed) {
 
@@ -3374,6 +3386,18 @@ sub lineMapMode {
 
 	# if no crash, get the stuff we want
 	else {
+	    # get H and e- number density
+	    my ($hden,$eden) = &getPhysicalConditions($tempPhysicalConditionsFile,
+						      $separator);
+
+            # get line emissivities
+            @line_emissivities = &getLineEmissivities($tempLineFile, (sprintf "## Line punch for T = %.3e.\n", $temperature));
+
+            # normalize emissivities
+            for (my $q = 0;$q < @line_emissivities;$q++) {
+                $line_emissivities[$q] = sprintf "%.4f", ($line_emissivities[$q] -
+                                                          (2 * log($hden) / log(10.)));
+            }
 
 	    # append temp file contents to larger file, if someone wants to keep this stuff
 	    if ($saveCloudyOutputFiles) {
@@ -3389,8 +3413,6 @@ sub lineMapMode {
 	    }
 	  }
 
-        my @line_emissivities = &getLineEmissivities($tempLineFile, (sprintf "## Line punch for T = %.3e.\n", $temperature));
-
 	# output Te, line emissivities to file.
 	open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
         printf OUT "%.".$ionFractionLogTPrecision."f  ", (log($temperature)/log(10));
@@ -3403,7 +3425,8 @@ sub lineMapMode {
     # delete temp files
     unlink $tempInputFile,
     $tempOutputFile,
-    $tempLineFile;
+    $tempLineFile,
+    $tempPhysicalConditionsFile;
 
     # delete Cloudy input/output files
     unlink $inputFile,$outputFile;
