@@ -11,13 +11,15 @@ combine_runfile_parts.pl - combines partial run files made when using
 			   Type ./combine_runfile_parts.pl with no argument 
 			   for usage.
 
+find_map_zeros.pl - Looks for gaps in the cooling data and fills with zeroes.
+
 subtract_cooling.pl - used to make metals only cooling data.  Subtracts 
 		      metal-only cooling data from data with all elements to 
-		      make metal-only data.
+		      make metal-only data.  USE THE OTHER ONE.
 		      Type ./subtract_cooling.pl with no argument for usage.
 
 subtract_cooling_lite.pl - same as subtract_cooling.pl, except uses less ram 
-			   and may be slightly slower.
+			   and may be slightly slower.  USE THIS ONE.
 
 Examples:
 
