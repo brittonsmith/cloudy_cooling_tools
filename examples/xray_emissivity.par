@@ -1,0 +1,102 @@
+###########################################################
+##################### Emissivity Map ######################
+###########################################################
+
+###########################################################
+##################### Run parameters ######################
+
+# path to Cloudy executable
+cloudyExe               = /Users/britton/Documents/work/cooling/coolingCodes/cLoop/cloudy_exe/cloudy13.exe
+
+# don't save raw output from Cloudy
+saveCloudyOutputFiles   = 1
+
+# exit if Cloudy crashes
+exitOnCrash             = 1
+
+# give this run a name
+outputFilePrefix        = xray_cl13
+
+# output directory
+outputDir               = /Users/britton/Documents/work/cooling/coolingCodes/cLoop/xray_cl13
+
+# index of first run
+runStartIndex           = 1
+
+# this is not a test
+test                    = 0
+
+# select a run mode
+cloudyRunMode           = 2 # emissivity map mode
+
+# Current Run Mode Options
+# 0: Bare Mode - just run Cloudy with no data processing
+# 1: Cooling Map Mode - create maps of heating and cooling vs. Te
+
+############################################################
+################# Cooling Map Parameters ###################
+
+# minimum temperature
+coolingMapTmin = 1e5
+
+# maximum temperature
+coolingMapTmax = 1e9
+
+# number of steps (log space)
+coolingMapTpoints = 81
+
+# linear temperature step size
+#coolingMapdT (currently redundant)
+
+# log temperature step size
+#coolingMapdLogT (currently redundant)
+
+# scale factor for cooling/heating
+# 1: n_H^2
+# 2: n_H * n_e
+coolingScaleFactor = 1
+
+############################################################
+################ Emissivty Map Parameters ##################
+
+# Energies given in a file
+#emissivityMapEnergyFile = /Users/britton/Documents/work/cooling/coolingCodes/cLoop/energies.dat
+
+# Minimum energy for emissivity map
+emissivityMapEmin = 0.1
+
+# Maximum energy for emissivity map
+emissivityMapEmax = 100
+
+# Number of energy points for emissivity map
+emissivityMapEpoints = 150
+
+# Energy units for emissivity map
+emissivityMapEnergyUnits = keV
+
+# Log/linear energy bins
+emissivityMapLogEnergyBins = 1
+
+############################################################
+############ Commands to be executed every time ############
+
+command stop zone 1
+
+command iterate to convergence
+
+# this command requires a temperature argument in Cloudy
+# here no, because we will run it in a loop
+# cLoop will take care of that
+command coronal equilibrium
+
+#command no H2 molecule
+
+command radius 5 3
+
+command metals 0 log
+command covering factor 1
+
+#######################################################
+############# Commands to be looped over ##############
+
+loop [hden] (-10;0;1)

@@ -30,6 +30,8 @@ sample_cooling_metal_free.par - sample parameter file for metal-free cooling.
 metal_free.dat - additional Cloudy commands for disabling metals with 
 	       	 metals-free cooling data.
 
+xray_emissivity.par - sample parameter file for making x-ray emissivity maps.
+
 #########################################################################
 
 Running CIAOLoop:
