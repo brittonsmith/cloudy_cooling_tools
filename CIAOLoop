@@ -1227,6 +1227,8 @@ sub processCommands {
     # list of user specified files
     my @userFiles = ();
 
+    my %set_vars = ();
+
     # first, go through list of commands given everytime
     for (my $q = 0;$q < @constantCommands;$q++) {
 
@@ -1333,6 +1335,14 @@ sub processCommands {
 	    }
 	}
 
+        # Command is to set an internal variable.
+        # Keep track of it in a hash.
+        elsif ($command =~ /\%\<(.+)\>\ (.+)$/) {
+            my $set_var = $1;
+            my $set_val = $2;
+            $set_vars{$set_var} = $set_val;
+        }
+
 	# Normal command, check for dollar sign and add it.
 	else {
 
@@ -1351,6 +1361,16 @@ sub processCommands {
 	    push @headerCommands, "# $command";
 	}
     } # end loop over loop commands
+
+    # loop over commands one more time and set internal variables
+    for (my $q = 0;$q < @commands;$q++) {
+        if ($commands[$q] =~ /\%\<(.+)\>/) {
+            my $set_var = $1;
+            if (exists($set_vars{$set_var})) {
+                $commands[$q] =~ s/\%\<$set_var\>/$set_vars{$set_var}/g;
+            }
+        }
+    }
 
     # return pointers to the arrays we made
     return (\@commands,\@headerCommands,\@userFiles);
