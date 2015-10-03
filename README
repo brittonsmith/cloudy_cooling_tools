@@ -1,0 +1,10 @@
+Convert emissivity maps from the native ascii format of CIAOLoop to 
+and hdf5 format usable by yt.
+
+Usage:
+
+From within this directory, do:
+
+python convert.py input_file output_file
+
+The input file should be the path to the file ending in .run made by CIAOLoop.
