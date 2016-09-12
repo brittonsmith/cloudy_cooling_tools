@@ -192,6 +192,9 @@ my @coolingMapTemperatures;
 # 2: n_H * n_e
 my $coolingScaleFactor = 1;
 
+# flag to attenuate radiation over a Jeans length
+my $coolingMapUseJeansLength = 0;
+
 # decimal precision for temperature in cooling maps
 my $temperaturePrecision = 6;
 
@@ -912,6 +915,16 @@ sub readParameterFile {
 	  die "No value given for coolingScaleFactor on line $lineNumber of $parameterFile.\n"
 	      unless ($value);
 	  $coolingScaleFactor = $value;
+      }
+
+      # get cooling scale factor flag
+      elsif ($line =~ /coolingMapUseJeansLength(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No value given for coolingMapUseJeansLength on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  $coolingMapUseJeansLength = $value;
       }
 
       ######################################
@@ -1936,6 +1949,14 @@ sub coolingMapMode {
       }
     }
 
+    # set constant for jeans length
+    my $gamma = 5. / 3.;
+    my $pi = 3.141592653589793;
+    my $kboltz = 1.3806488e-16; # erg/K
+    my $mh = 1.67373522381e-24; # g
+    my $G = 6.67384e-08; # cm**3/(g*s**2)
+    my $jeans_length_constant = $pi * (($gamma * $kboltz) / ($G * $mh))**0.5;
+
     # temporary files
     my $tempInputFile = $inputFile . $tempFileSuffix;
     my $tempOutputFile = $outputFile . $tempFileSuffix;
@@ -1975,6 +1996,15 @@ sub coolingMapMode {
 
 	$temperature = sprintf "%f", $temperature;
 	$cooling = $heating = $mmw = 0;
+
+        # calculate Jeans length and give to Cloudy as a cloud depth
+       if ($coolingMapUseJeansLength == 1) {
+           my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
+           # assume mu = 1
+           my $jeans_length = $jeans_length_constant *
+               ($temperature / $total_density)**(0.5);
+           push @runCommands, "radius 1e30 $jeans_length linear\n";
+       }
 
 	my @runCommands = @commands;
 
