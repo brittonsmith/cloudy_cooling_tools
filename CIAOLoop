@@ -922,8 +922,8 @@ sub readParameterFile {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
-	  die "No value given for coolingMapUseJeansLength on line $lineNumber of $parameterFile.\n"
-	      unless ($value);
+	  die "coolingMapUseJeansLength must be set to 0 or 1 on line $lineNumber of $parameterFile.\n"
+	      unless (($value eq '0') || ($value eq '1'));
 	  $coolingMapUseJeansLength = $value;
       }
 
@@ -1997,6 +1997,8 @@ sub coolingMapMode {
 	$temperature = sprintf "%f", $temperature;
 	$cooling = $heating = $mmw = 0;
 
+	my @runCommands = @commands;
+
         # calculate Jeans length and give to Cloudy as a cloud depth
        if ($coolingMapUseJeansLength == 1) {
            my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
@@ -2005,8 +2007,6 @@ sub coolingMapMode {
                ($temperature / $total_density)**(0.5);
            push @runCommands, "radius 1e30 $jeans_length linear\n";
        }
-
-	my @runCommands = @commands;
 
 	# add either constant temperature or coronal equilibrium command
 	if ($coronalEquilibrium >= 0) {
