@@ -936,7 +936,7 @@ sub readParameterFile {
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
 	  $value =~ s/^\s+//;
 	  die "coolingMapMaximumJeansLength must be positive on line $lineNumber of $parameterFile.\n"
-	      unless ($value gt '0')
+	      unless ($value gt '0');
 	  $coolingMapMaximumJeansLength = $value;
       }
 
@@ -3065,6 +3065,14 @@ sub ionFractionMapMode {
 	last FIND;
       }
     }
+
+    # set constant for jeans length
+    my $gamma = 5. / 3.;
+    my $pi = 3.141592653589793;
+    my $kboltz = 1.3806488e-16; # erg/K
+    my $mh = 1.67373522381e-24; # g
+    my $G = 6.67384e-08; # cm**3/(g*s**2)
+    my $jeans_length_constant = $pi * (($gamma * $kboltz) / ($G * $mh))**0.5;
 
     # temporary files
     my $tempInputFile = $inputFile . $tempFileSuffix;
