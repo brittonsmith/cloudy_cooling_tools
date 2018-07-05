@@ -259,7 +259,7 @@ my %energyConversion = ('MHz'  =>     1e-6,
 my @ionFractionElements = ();
 
 # Float precision for output of log temperature.
-my $ionFractionLogTPrecision = 2;
+my $ionFractionLogTPrecision = 3;
 
 # Float precision for output of ion fraction vales.
 my $ionFractionPrecision = 3;
