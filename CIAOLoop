@@ -195,6 +195,9 @@ my $coolingScaleFactor = 1;
 # flag to attenuate radiation over a Jeans length
 my $coolingMapUseJeansLength = 0;
 
+# maximum length scale to use with radiation attenuation
+my $coolingMapMaximumJeansLength = 3.086e20;
+
 # decimal precision for temperature in cooling maps
 my $temperaturePrecision = 6;
 
@@ -917,7 +920,7 @@ sub readParameterFile {
 	  $coolingScaleFactor = $value;
       }
 
-      # get cooling scale factor flag
+      # flag to use Jeans length as length scale
       elsif ($line =~ /coolingMapUseJeansLength(\z|[\s\=])/i) {
 	  my (undef,$value) = split /=/, $line, 2;
 	  (undef,$value) = split " ", $line, 2 unless (defined($value));
@@ -925,6 +928,16 @@ sub readParameterFile {
 	  die "coolingMapUseJeansLength must be set to 0 or 1 on line $lineNumber of $parameterFile.\n"
 	      unless (($value eq '0') || ($value eq '1'));
 	  $coolingMapUseJeansLength = $value;
+      }
+
+      # maximum length scale to consider for Jeans length
+      elsif ($line =~ /coolingMapMaximumJeansLength(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "coolingMapMaximumJeansLength must be positive on line $lineNumber of $parameterFile.\n"
+	      unless ($value gt '0')
+	  $coolingMapMaximumJeansLength = $value;
       }
 
       ######################################
@@ -2005,6 +2018,8 @@ sub coolingMapMode {
            # assume mu = 1
            my $jeans_length = $jeans_length_constant *
                ($temperature / $total_density)**(0.5);
+	   $jeans_length = ($jeans_length > $coolingMapMaximumJeansLength) ?
+	       $coolingMapMaximumJeansLength : $jeans_length;
            push @runCommands, "radius 1e30 $jeans_length linear\n";
        }
 
