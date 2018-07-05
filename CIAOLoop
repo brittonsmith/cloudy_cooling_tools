@@ -543,7 +543,7 @@ sub readParameterFile {
       chomp $line;
       $line =~ s/^\s+//;
       $line =~ s/\s+$//;
-      $line =~ s/\#.+//;
+      $line =~ s/\#.*//;
 
       if (!$line) {
 	  next PARLOAD;
