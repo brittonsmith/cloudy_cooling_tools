@@ -2013,15 +2013,15 @@ sub coolingMapMode {
 	my @runCommands = @commands;
 
         # calculate Jeans length and give to Cloudy as a cloud depth
-       if ($coolingMapUseJeansLength == 1) {
-           my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
-           # assume mu = 1
-           my $jeans_length = $jeans_length_constant *
-               ($temperature / $total_density)**(0.5);
-	   $jeans_length = ($jeans_length > $coolingMapMaximumJeansLength) ?
-	       $coolingMapMaximumJeansLength : $jeans_length;
-           push @runCommands, "radius 1e30 $jeans_length linear\n";
-       }
+	if ($coolingMapUseJeansLength == 1) {
+	    my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
+	    # assume mu = 1
+	    my $jeans_length = $jeans_length_constant *
+		($temperature / $total_density)**(0.5);
+	    $jeans_length = ($jeans_length > $coolingMapMaximumJeansLength) ?
+		$coolingMapMaximumJeansLength : $jeans_length;
+	    push @runCommands, "radius 1e30 $jeans_length linear\n";
+	}
 
 	# add either constant temperature or coronal equilibrium command
 	if ($coronalEquilibrium >= 0) {
@@ -3118,6 +3118,17 @@ sub ionFractionMapMode {
 	}
 	else {
 	    push @runCommands, "constant temperature $temperature K linear\n";
+	}
+
+	# calculate Jeans length and give to Cloudy as a cloud depth
+	if ($coolingMapUseJeansLength == 1) {
+	    my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
+	    # assume mu = 1
+	    my $jeans_length = $jeans_length_constant *
+		($temperature / $total_density)**(0.5);
+	    $jeans_length = ($jeans_length > $coolingMapMaximumJeansLength) ?
+		$coolingMapMaximumJeansLength : $jeans_length;
+	    push @runCommands, "radius 1e30 $jeans_length linear\n";
 	}
 
 	# add cooling map mode commands
