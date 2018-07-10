@@ -440,7 +440,7 @@ while (@machinesUnavailable) {
 }
 
 # The End
-print "Run ended successfully at " . scalar (localtime) . "\n";
+print "Run completed successfully at " . scalar (localtime) . "\n";
 
 #####################################################################
 #####################################################################
@@ -1521,12 +1521,16 @@ sub runCloudyMode {
 		      # machine numbers are 1 based
 		      $myMachine = $machines[$machineToAssign-1];
 
-		      print "Running Cloudy: $currentRunIndex of $totalRuns on $myMachine.\n";
+		      my $tstart = time;
+		      print scalar(localtime) . " - ";
+		      print "$currentRunIndex/$totalRuns started on $myMachine.\n";
 
 		      # run
 		      $cloudyRunModes[$cloudyRunMode]->(@loopCommands);
 
-		      print "Finished Cloudy run $currentRunIndex.\n";
+		      my $tend = time;
+		      print scalar(localtime) . " - ";
+		      print "$currentRunIndex/$totalRuns finished in " . ($tend - $tstart) . " s on $myMachine.\n";
 
 		      # signal that machine is no longer in use by deleting its file
 		      unlink $runningMachineFile;
@@ -1583,9 +1587,15 @@ sub runCloudyMode {
 	else {
  
 	    # run Cloudy
-	    print "Running Cloudy: $currentRunIndex of $totalRuns.\n";
+	    my $tstart = time;
+	    print scalar(localtime) . " - ";
+	    print "$currentRunIndex/$totalRuns started.\n";
 
 	    $cloudyRunModes[$cloudyRunMode]->(@loopCommands);
+
+	    my $tend = time;
+	    print scalar(localtime) . " - ";
+	    print "$currentRunIndex/$totalRuns finished in " . ($tend - $tstart) . " s.\n";
 
 	} # end serial mode branch
 
