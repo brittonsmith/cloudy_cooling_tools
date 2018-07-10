@@ -90,6 +90,9 @@ my $cloudyRunMode = 0;
 # Save all output from Cloudy.
 my $saveCloudyOutputFiles = 1;
 
+# Save only the files necessary for table creation.
+my $saveMinimumOutputFiles = 0;
+
 # Exit program when Cloudy crashes
 my $exitOnCrash = 0;
 
@@ -196,7 +199,7 @@ my $coolingScaleFactor = 1;
 my $coolingMapUseJeansLength = 0;
 
 # maximum length scale to use with radiation attenuation
-my $coolingMapMaximumJeansLength = 3.086e20;
+my $coolingMapMaximumJeansLength = 3.086e20; # 100 pc
 
 # decimal precision for temperature in cooling maps
 my $temperaturePrecision = 6;
@@ -636,6 +639,17 @@ sub readParameterFile {
 	  die "saveCloudyOutputFiles must be set to 0 or 1 on line $lineNumber of $parameterFile.\n"
 	      unless (($value eq '0') || ($value eq '1'));
 	  $saveCloudyOutputFiles = $value;
+	  undef $value;
+      }
+
+      # get option to save just the minimum output
+      elsif ($line =~ /^saveMinimumOutputFiles(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "saveMinimumOutputFiles must be set to 0 or 1 on line $lineNumber of $parameterFile.\n"
+	      unless (($value eq '0') || ($value eq '1'));
+	  $saveMinimumOutputFiles = $value;
 	  undef $value;
       }
 
@@ -2956,11 +2970,18 @@ sub getContinuum {
 #####################################################################
 ## CONTENTS ##
 ##
-##    ionFractionMapMode - 
+##    ionFractionMapMode - extract tables of ionization fraction
+##                         for a given list of elements. Tables
+##                         span a temperature range (like cooling
+##                         tables) and the user-specified parameter
+##                         space.
 ##
-##    ionFractionMapModeInitialize - 
+##    ionFractionMapModeInitialize - similar to initialization for
+##                                   cooling maps, but also get the
+##                                   list of elements.
 ##
-##    getIonFraction - 
+##    getIonFraction - parse the ionization output from Cloudy
+##                     to get ion fractions for a given element.
 ##
 
 #####################################################################
@@ -3088,26 +3109,31 @@ sub ionFractionMapMode {
 	}
     }
 
-    # create files for each element requested
-    foreach my $element (@ionFractionElements) {
-      my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
-      unlink $dataOutputFile if (-e $outputFile);
+    # save disk space by not creating the individual element tables
+    unless ($saveMinimumOutputFiles) {
 
-      # creat file header
-      open (OUT, ">$dataOutputFile") or die "Can't open $dataOutputFile to write the header.\n";
-      print OUT "# " . scalar (localtime) . "\n";
-      print OUT "#\n";
-      printf OUT "# %s Ion Fraction File\n", $atomicName{$element};
-      print OUT "#\n";
-      print OUT "# Loop values:\n";
-      print OUT @headerCommands;
-      print OUT "#\n";
-      print OUT "# Data Columns:\n";
-      print OUT "# log(Te [K])\n";
-      print OUT "# log(Ion Fractions)\n";
-      print OUT "#\n";
-      print OUT "#Te\t" . (join "\t", (1 .. $atomicNumber{$element}+1)) . "\n";
-      close (OUT);
+	# create files for each element requested
+	foreach my $element (@ionFractionElements) {
+	    my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
+	    unlink $dataOutputFile if (-e $outputFile);
+
+	    # creat file header
+	    open (OUT, ">$dataOutputFile") or die "Can't open $dataOutputFile to write the header.\n";
+	    print OUT "# " . scalar (localtime) . "\n";
+	    print OUT "#\n";
+	    printf OUT "# %s Ion Fraction File\n", $atomicName{$element};
+	    print OUT "#\n";
+	    print OUT "# Loop values:\n";
+	    print OUT @headerCommands;
+	    print OUT "#\n";
+	    print OUT "# Data Columns:\n";
+	    print OUT "# log(Te [K])\n";
+	    print OUT "# log(Ion Fractions)\n";
+	    print OUT "#\n";
+	    print OUT "#Te\t" . (join "\t", (1 .. $atomicNumber{$element}+1)) . "\n";
+	    close (OUT);
+	}
+
     }
 
     # loop over specified temperature range, collecting ionization state
@@ -3174,37 +3200,44 @@ sub ionFractionMapMode {
 
 	  my $separator = sprintf "for T = %.3e.\n", $temperature;
 
-	  # Get ion fractions from output file.
-	  my %ionFractions = &getIonFraction($tempIonizationFile, $separator);
+	  unless ($saveMinimumOutputFiles) {
 
-	  foreach my $element (@ionFractionElements) {
-	    my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
+	      # Get ion fractions from output file.
+	      my %ionFractions = &getIonFraction($tempIonizationFile, $separator);
 
-	    # Ouput ion fractions.
-	    open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
-	    printf OUT "%.".$ionFractionLogTPrecision."f", (log($temperature)/log(10));
-	    for my $electron (0 .. $atomicNumber{$element}) {
-	      if ($electron >= @{$ionFractions{$element}}) {
-		$ionFractions{$element}[$electron] = -30.0;
+	      foreach my $element (@ionFractionElements) {
+		  my $dataOutputFile = sprintf "%s_%s.dat", $keyName, $element;
+
+		  # Ouput ion fractions.
+		  open (OUT, ">>$dataOutputFile") or die "Can't open $dataOutputFile to write out data.\n";
+		  printf OUT "%.".$ionFractionLogTPrecision."f", (log($temperature)/log(10));
+		  for my $electron (0 .. $atomicNumber{$element}) {
+		      if ($electron >= @{$ionFractions{$element}}) {
+			  $ionFractions{$element}[$electron] = -30.0;
+		      }
+		      printf OUT "\t%.".$ionFractionPrecision."f", $ionFractions{$element}[$electron];
+		  }
+		  print OUT "\n";
+		  close (OUT);
+
 	      }
-	      printf OUT "\t%.".$ionFractionPrecision."f", $ionFractions{$element}[$electron];
-	    }
-	    print OUT "\n";
-	    close (OUT);
 
 	  }
 
-	    # append temp file contents to larger file, if someone wants to keep this stuff
-	    if ($saveCloudyOutputFiles) {
-		&pushFile($inputFile,$tempInputFile,(sprintf "## Input %s", $separator));
-		&pushFile($outputFile,$tempOutputFile,(sprintf "## Output %s", $separator));
-		&pushFile($ionizationFile,$tempIonizationFile,(sprintf "## Ionization punch %s", $separator));
-	    }
+	  # append temp file contents to larger file, if someone wants to keep this stuff
+	  if ($saveCloudyOutputFiles) {
+	      &pushFile($inputFile,$tempInputFile,(sprintf "## Input %s", $separator));
+	      &pushFile($outputFile,$tempOutputFile,(sprintf "## Output %s", $separator));
+	  }
 
-	    # append user specified output files
-	    foreach my $userFile (@userFiles) {
-		&pushFile($userFile,"$userFile$tempFileSuffix",(sprintf "## User output punch %s", $separator));
-	    }
+	  if ($saveCloudyOutputFiles || $saveMinimumOutputFiles) {
+	      &pushFile($ionizationFile,$tempIonizationFile,(sprintf "## Ionization punch %s", $separator));
+	  }
+
+	  # append user specified output files
+	  foreach my $userFile (@userFiles) {
+	      &pushFile($userFile,"$userFile$tempFileSuffix",(sprintf "## User output punch %s", $separator));
+	  }
 	}
 
     } # end loop over temperature
