@@ -2532,11 +2532,11 @@ sub set_electron_fraction {
     my $electronFactor = 9.153959e-3;
     my $hydrogenMassFraction = 10. / 14.;
     my $electronMetalFreeMax = (1 + $hydrogenMassFraction) / (2 * $hydrogenMassFraction);
-  FIND: for (my $q = 0;$q < @commands;$q++) {
-      if ($commands[$q] =~ /^metal free electron fraction (.+)$/) {
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^metal free electron fraction (.+)$/) {
 	my $electronFraction = $1;
 	my $electronDensity = $electronFraction + log(($electronMetalFreeMax + ($electronFactor * $metals)) * $hden) / log(10);
-	$commands[$q] = "set eden $electronDensity\n";
+	$command = "set eden $electronDensity\n";
 	last FIND;
       }
     }
