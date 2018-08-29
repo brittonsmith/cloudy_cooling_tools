@@ -1872,6 +1872,19 @@ sub bareMode {
 ##                             cooling map mode.
 ##
 ##    loadMassData - fills atomic weight array.
+##
+##    find_hydrogen_density - find h density value hidden in commands.
+##
+##    find_metallicity - find metallicity value hidden in commands.
+##
+##    check_for_coronal_equilibrium - check for a coronal equilibrium
+##                                    command.
+##
+##    set_electron_fraction - find command to specify electron fraction
+##                            and set appropriate Cloudy command.
+##
+##    calculate_jeans_length - calculate jeans length
+
 
 #####################################################################
 ######################### coolingMapMode ############################
@@ -1927,72 +1940,16 @@ sub coolingMapMode {
     my @userFiles = @$userFilesPointer;
 
     # check for a coronal equilibrium command
-    my $coronalEquilibrium = -1;
-  CHECK: for (my $q = 0;$q < @commands;$q++) {
-      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
-	  $coronalEquilibrium = $q;
-	  last CHECK;
-      }
-  }
+    my $coronalEquilibrium = &check_for_coronal_equilibrium(@commands);
 
     # find h density value hidden in commands
-    my $hden;
-  FIND: foreach my $command (@commands) {
-      if ($command =~ /^hden /) {
-	$hden = $command;
-	$hden =~ s/hden//;
-	if ($hden =~ /linear/) {
-	  $hden =~ s/linear//;
-	}
-	elsif ($hden =~ /log/) {
-	  $hden =~ s/log//;
-	  $hden = 10**$hden;
-	}
-	else {
-	  $hden = 10**$hden;
-	}
-	last FIND;
-      }
-    }
+    my $hden = &find_hydrogen_density(@commands);
 
     # find metallicity value hidden in commands
-    my $metals;
-  FIND: foreach my $command (@commands) {
-      if ($command =~ /^metals /) {
-	$metals = $command;
-	$metals =~ s/metals//;
-	if ($metals =~ /linear/) {
-	  $metals =~ s/linear//;
-	}
-	elsif ($metals =~ /log/) {
-	  $metals =~ s/log//;
-	  $metals = 10**$metals;
-	}
-	last FIND;
-      }
-    }
+    my $metals = &find_metallicity(@commands);
 
     # find command to specify electron fraction (not an actual cloudy command)
-    my $electronFractionCommand;
-    my $electronFactor = 9.153959e-3;
-    my $hydrogenMassFraction = 10. / 14.;
-    my $electronMetalFreeMax = (1 + $hydrogenMassFraction) / (2 * $hydrogenMassFraction);
-  FIND: foreach my $command (@commands) {
-      if ($command =~ /^metal free electron fraction (.+)$/) {
-	my $electronFraction = $1;
-	my $electronDensity = $electronFraction + log(($electronMetalFreeMax + ($electronFactor * $metals)) * $hden) / log(10);
-	$command = "set eden $electronDensity\n";
-	last FIND;
-      }
-    }
-
-    # set constant for jeans length
-    my $gamma = 5. / 3.;
-    my $pi = 3.141592653589793;
-    my $kboltz = 1.3806488e-16; # erg/K
-    my $mh = 1.67373522381e-24; # g
-    my $G = 6.67384e-08; # cm**3/(g*s**2)
-    my $jeans_length_constant = $pi * (($gamma * $kboltz) / ($G * $mh))**0.5;
+    @commands = &set_electron_fraction(@commands);
 
     # temporary files
     my $tempInputFile = $inputFile . $tempFileSuffix;
@@ -2038,12 +1995,7 @@ sub coolingMapMode {
 
         # calculate Jeans length and give to Cloudy as a cloud depth
 	if ($coolingMapUseJeansLength == 1) {
-	    my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
-	    # assume mu = 1
-	    my $jeans_length = $jeans_length_constant *
-		($temperature / $total_density)**(0.5);
-	    $jeans_length = ($jeans_length > $coolingMapMaximumJeansLength) ?
-		$coolingMapMaximumJeansLength : $jeans_length;
+	    my $jeans_length = &calculate_jeans_length($hden, $temperature);
 	    push @runCommands, "radius 1e30 $jeans_length linear\n";
 	}
 
@@ -2501,6 +2453,120 @@ sub loadMassData {
 }
 
 #####################################################################
+###################### find_hydrogen_density ########################
+# find h density value hidden in commands
+
+sub find_hydrogen_density {
+    my @commands = @_;
+
+    my $hden;
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^hden /) {
+	  $hden = $command;
+	  $hden =~ s/hden//;
+	  if ($hden =~ /linear/) {
+	      $hden =~ s/linear//;
+	  }
+	  elsif ($hden =~ /log/) {
+	      $hden =~ s/log//;
+	      $hden = 10**$hden;
+	  }
+	  else {
+	      $hden = 10**$hden;
+	  }
+	  last FIND;
+      }
+  }
+    return $hden;
+}
+
+#####################################################################
+######################### find_metallicity ##########################
+# find metallicity value hidden in commands
+
+sub find_metallicity {
+    my @commands = @_;
+
+    my $metals;
+  FIND: foreach my $command (@commands) {
+      if ($command =~ /^metals /) {
+	  $metals = $command;
+	  $metals =~ s/metals//;
+	  if ($metals =~ /linear/) {
+	      $metals =~ s/linear//;
+	  }
+	  elsif ($metals =~ /log/) {
+	      $metals =~ s/log//;
+	      $metals = 10**$metals;
+	  }
+	  last FIND;
+      }
+  }
+    return $metals;
+}
+
+#####################################################################
+################### check_for_coronal_equilibrium ###################
+# check for a coronal equilibrium command
+
+sub check_for_coronal_equilibrium {
+    my @commands = @_;
+
+    my $coronalEquilibrium = -1;
+  CHECK: for (my $q = 0;$q < @commands;$q++) {
+      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
+	  $coronalEquilibrium = $q;
+	  last CHECK;
+      }
+  }
+    return $coronalEquilibrium;
+}
+
+#####################################################################
+####################### set_electron_fraction #######################
+# find command to specify electron fraction (not an actual cloudy command)
+
+sub set_electron_fraction {
+    my @commands = @_;
+    # find command to specify electron fraction (not an actual cloudy command)
+    my $electronFactor = 9.153959e-3;
+    my $hydrogenMassFraction = 10. / 14.;
+    my $electronMetalFreeMax = (1 + $hydrogenMassFraction) / (2 * $hydrogenMassFraction);
+  FIND: for (my $q = 0;$q < @commands;$q++) {
+      if ($commands[$q] =~ /^metal free electron fraction (.+)$/) {
+	my $electronFraction = $1;
+	my $electronDensity = $electronFraction + log(($electronMetalFreeMax + ($electronFactor * $metals)) * $hden) / log(10);
+	$commands[$q] = "set eden $electronDensity\n";
+	last FIND;
+      }
+    }
+    return @commands;
+}
+
+#####################################################################
+###################### calculate_jeans_length #######################
+# calculate jeans length
+
+sub calculate_jeans_length {
+    my ($hden, $temperature) = @_;
+
+    my $gamma = 5. / 3.;
+    my $pi = 3.141592653589793;
+    my $kboltz = 1.3806488e-16; # erg/K
+    my $mh = 1.67373522381e-24; # g
+    my $G = 6.67384e-08; # cm**3/(g*s**2)
+    my $jeans_length_constant = $pi * (($gamma * $kboltz) / ($G * $mh))**0.5;
+
+    my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
+    # assume mu = 1
+    my $jeans_length = $jeans_length_constant *
+	($temperature / $total_density)**(0.5);
+    $jeans_length = ($jeans_length > $coolingMapMaximumJeansLength) ?
+	$coolingMapMaximumJeansLength : $jeans_length;
+    return $jeans_length;
+}
+
+#####################################################################
 #####################################################################
 #####################################################################
 
@@ -2574,13 +2640,7 @@ sub emissivityMapMode {
     my @userFiles = @$userFilesPointer;
 
     # check for a coronal equilibrium command
-    my $coronalEquilibrium = -1;
-  CHECK: for (my $q = 0;$q < @commands;$q++) {
-      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
-	  $coronalEquilibrium = $q;
-	  last CHECK;
-      }
-  }
+    my $coronalEquilibrium = &check_for_coronal_equilibrium(@commands);
 
     # temporary files
     my $tempInputFile = $inputFile . $tempFileSuffix;
@@ -3038,72 +3098,16 @@ sub ionFractionMapMode {
     my @userFiles = @$userFilesPointer;
 
     # check for a coronal equilibrium command
-    my $coronalEquilibrium = -1;
-  CHECK: for (my $q = 0;$q < @commands;$q++) {
-      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
-	  $coronalEquilibrium = $q;
-	  last CHECK;
-      }
-  }
+    my $coronalEquilibrium = &check_for_coronal_equilibrium(@commands);
 
     # find h density value hidden in commands
-    my $hden;
-  FIND: foreach my $command (@commands) {
-      if ($command =~ /^hden /) {
-	$hden = $command;
-	$hden =~ s/hden//;
-	if ($hden =~ /linear/) {
-	  $hden =~ s/linear//;
-	}
-	elsif ($hden =~ /log/) {
-	  $hden =~ s/log//;
-	  $hden = 10**$hden;
-	}
-	else {
-	  $hden = 10**$hden;
-	}
-	last FIND;
-      }
-    }
+    my $hden = &find_hydrogen_density(@commands);
 
     # find metallicity value hidden in commands
-    my $metals;
-  FIND: foreach my $command (@commands) {
-      if ($command =~ /^metals /) {
-	$metals = $command;
-	$metals =~ s/metals//;
-	if ($metals =~ /linear/) {
-	  $metals =~ s/linear//;
-	}
-	elsif ($metals =~ /log/) {
-	  $metals =~ s/log//;
-	  $metals = 10**$metals;
-	}
-	last FIND;
-      }
-    }
+    my $metals = &find_metallicity(@commands);
 
     # find command to specify electron fraction (not an actual cloudy command)
-    my $electronFractionCommand;
-    my $electronFactor = 9.153959e-3;
-    my $hydrogenMassFraction = 10. / 14.;
-    my $electronMetalFreeMax = (1 + $hydrogenMassFraction) / (2 * $hydrogenMassFraction);
-  FIND: foreach my $command (@commands) {
-      if ($command =~ /^metal free electron fraction (.+)$/) {
-	my $electronFraction = $1;
-	my $electronDensity = $electronFraction + log(($electronMetalFreeMax + ($electronFactor * $metals)) * $hden) / log(10);
-	$command = "set eden $electronDensity\n";
-	last FIND;
-      }
-    }
-
-    # set constant for jeans length
-    my $gamma = 5. / 3.;
-    my $pi = 3.141592653589793;
-    my $kboltz = 1.3806488e-16; # erg/K
-    my $mh = 1.67373522381e-24; # g
-    my $G = 6.67384e-08; # cm**3/(g*s**2)
-    my $jeans_length_constant = $pi * (($gamma * $kboltz) / ($G * $mh))**0.5;
+    @commands = &set_electron_fraction(@commands);
 
     # temporary files
     my $tempInputFile = $inputFile . $tempFileSuffix;
@@ -3166,12 +3170,7 @@ sub ionFractionMapMode {
 
 	# calculate Jeans length and give to Cloudy as a cloud depth
 	if ($coolingMapUseJeansLength == 1) {
-	    my $total_density = $hden * $mh / 0.76; # primordial H mass fraction
-	    # assume mu = 1
-	    my $jeans_length = $jeans_length_constant *
-		($temperature / $total_density)**(0.5);
-	    $jeans_length = ($jeans_length > $coolingMapMaximumJeansLength) ?
-		$coolingMapMaximumJeansLength : $jeans_length;
+	    my $jeans_length = &calculate_jeans_length($hden, $temperature);
 	    push @runCommands, "radius 1e30 $jeans_length linear\n";
 	}
 
@@ -3416,13 +3415,7 @@ sub lineMapMode {
     my @userFiles = @$userFilesPointer;
 
     # check for a coronal equilibrium command
-    my $coronalEquilibrium = -1;
-  CHECK: for (my $q = 0;$q < @commands;$q++) {
-      if ($commands[$q] =~ /coronal\s+equilibrium/i) {
-	  $coronalEquilibrium = $q;
-	  last CHECK;
-      }
-  }
+    my $coronalEquilibrium = &check_for_coronal_equilibrium(@commands);
 
     # temporary files
     my $tempInputFile = $inputFile . $tempFileSuffix;
