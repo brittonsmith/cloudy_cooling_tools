@@ -68,6 +68,9 @@ my $cloudyExe = "./cloudy.exe";
 # First time run or a restart
 my $restart = 0;
 
+# Resume mode: scan for incomplete maps and start there.
+my $resume = 0;
+
 # A reprocess run (using existing data) 
 # or a run that will call Cloudy.
 my $reprocess_run = 0;
@@ -317,6 +320,11 @@ while (my $arg = shift @ARGV) {
 	$restart = 1;
     }
 
+  # restart an incomplete run
+    if ($arg =~ /^-rx$/) {
+	$resume = 1;
+    }
+
     # run in parallel
     elsif ($arg =~ /^-m$/) {
 	$parallel = 1;
@@ -511,6 +519,9 @@ print "Run completed successfully at " . scalar (localtime) . "\n";
 ##
 ##    pushFile - Appends contents of one file to another, adding 
 ##               contents of a string to the appended file.
+##
+##    check_point_completed - Check if a point in the map has been
+##                            completed.
 
 #####################################################################
 ############################# printHelp #############################
@@ -525,6 +536,7 @@ sub printHelp {
   print "\t-mp <this part> <total parts>: break run into parts to be run separately.\n";
   print "\t-np <number of processors>: run on multiple cores on a single machine.\n";
   print "\t-r: restart run from last file finished.\n";
+  print "\t-rx: resume mode: scan for incomplete files and restart where they left off.\n";
   print "\t-x: reprocess existing output data instead of running Cloudy.\n";
 
   exit(0);
@@ -1748,6 +1760,40 @@ sub makeTempFile {
 }
 
 #####################################################################
+###################### check_point_completed ########################
+# check an output file to see if a given map point has been completed
+
+sub check_point_completed {
+  my ($filename, $separator) = @_;
+
+  unless (-f $filename) {
+      return 0;
+  }
+
+  open (IN, "<$filename") or die "Could not open $filename to make temp file.\n";
+  my @lines;
+  # trying to read directly into the array was hanging
+  while (my $line = <IN>) {
+      push @lines, $line;
+  }
+  close (IN);
+
+  chomp $separator;
+  my $start_line = -1;
+
+ LINES: for (my $line = 0;$line < @lines;$line++) {
+     chomp $lines[$line];
+     my $result = index($lines[$line], $separator);
+     if ($result > 0) {
+	 $start_line = $line;
+	 last LINES;
+     }
+ }
+
+  return ($start_line < 0) ? 0 : 1;
+}
+
+#####################################################################
 ############################# pushFile ##############################
 # Append contents of littleFile to bigFile with separator string.
 
@@ -2528,7 +2574,13 @@ sub check_for_coronal_equilibrium {
 
 sub set_electron_fraction {
     my @commands = @_;
-    # find command to specify electron fraction (not an actual cloudy command)
+
+    # find h density value hidden in commands
+    my $hden = &find_hydrogen_density(@commands);
+
+    # find metallicity value hidden in commands
+    my $metals = &find_metallicity(@commands);
+
     my $electronFactor = 9.153959e-3;
     my $hydrogenMassFraction = 10. / 14.;
     my $electronMetalFreeMax = (1 + $hydrogenMassFraction) / (2 * $hydrogenMassFraction);
@@ -3074,7 +3126,7 @@ sub ionFractionMapMode {
     my $tempFileSuffix = ".temp";
 
     # if this is a restart, and this is the interrupted file, delete old files
-    unless ($reprocess_run) {
+    unless ($reprocess_run || $resume) {
       unlink $inputFile if (-e $inputFile);
       unlink $outputFile if (-e $outputFile);
       unlink $ionizationFile if (-e $ionizationFile);
@@ -3153,9 +3205,10 @@ sub ionFractionMapMode {
     # loop over specified temperature range, collecting ionization state
     my $endingCriterion = defined($coolingMapdT) ? $coolingMapTmax+$coolingMapdT  : $coolingMapTmax*(10**$coolingMapdLogT);
 
-    foreach my $temperature (@coolingMapTemperatures) {
+    TLOOP: foreach my $temperature (@coolingMapTemperatures) {
 
 	$temperature = sprintf "%f", $temperature;
+	my $separator = sprintf "for T = %.3e.\n", $temperature;
 
 	my @runCommands = @commands;
 
@@ -3181,8 +3234,19 @@ sub ionFractionMapMode {
 	my $cloudyCrashed = 0;
 	my @warnings = ();
 
+	my $point_done = 0;
+	if ($resume) {
+	    $point_done = &check_point_completed($ionizationFile, $separator);
+	    next TLOOP if ($point_done);
+	}
+
 	# run Cloudy and get warnings and crash flag
-	($cloudyCrashed,@warnings) = &runCloudy($tempInputFile,$tempOutputFile,@runCommands);
+	if ($point_done) {
+	    ($cloudyCrashed,@warnings) = (0, ());
+	}
+	else {
+	    ($cloudyCrashed,@warnings) = &runCloudy($tempInputFile,$tempOutputFile,@runCommands);
+	}
 
 	# if there were warnings, add them to a file
 	if (@warnings) {
@@ -3206,8 +3270,6 @@ sub ionFractionMapMode {
 
 	# if no crash, get the stuff we want
 	else {
-
-	  my $separator = sprintf "for T = %.3e.\n", $temperature;
 
 	  unless ($saveMinimumOutputFiles) {
 
