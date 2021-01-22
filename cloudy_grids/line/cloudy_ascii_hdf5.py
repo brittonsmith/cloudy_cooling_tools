@@ -1,13 +1,9 @@
-"""
-Britton Smith <brittonsmith@gmail.com>
-
-Routine for converting ascii Cloudy cooling data to hdf5.
-"""
-
 import h5py
 import numpy as np
 import re
 import copy
+
+from cloudy_grids.utilities import get_grid_indices
 
 floatType = '>f8'
 intType = '>i8'
@@ -15,16 +11,31 @@ intType = '>i8'
 field_dict = {"hden": "log_nH",
               "log_T": "log_T"}
 
-def cloudyGrid_ascii2hdf5(runFile,outputFile):
-    "Convert Cloudy cooling ascii data into hdf5."
+def convert_line_tables(runFile,outputFile):
+    """
+    Convert ascii line emissivity tables to hdf5.
 
-    print "Converting %s to %s." % (runFile,outputFile)
+    Parameters
+    ----------
+    run_file : string
+        Path to the input file ending in .run.
+    output_file : string
+        HDF5 output file name.
+
+    Examples
+    --------
+
+    >>> from cloudy_grids import convert_emissivity_tables
+    >>> convert_line_tables("line/line.run", "line.h5")
+
+    """
+
+    print ("Converting %s to %s." % (runFile,outputFile))
 
     if runFile[-4:] == '.run':
         prefix = runFile[0:-4]
     else:
-        print "Run file needs to end in .run."
-        exit(1)
+        raise RuntimeError("Run file needs to end in .run.")
 
     f = open(runFile,'r')
     lines = f.readlines()
@@ -49,7 +60,7 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
                 getParameterValues = False
             else:
                 (par,values) = line.split(': ')
-                floatValues = map(float,values.split())
+                floatValues = [float(val) for val in values.split()]
                 parameterValues.append(floatValues)
                 parameterNames.append(par[2:])
         elif getRunValues:
@@ -63,17 +74,17 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
 
     # Check file line number against product of parameter numbers.
     gridDimension = [len(q) for q in parameterValues]
-    if totalRuns != reduce((lambda x,y: x*y),gridDimension):
-        print "Error: total runs (%d) in run file not equal to product of parameters(%d)." % \
-        (totalRuns,reduce((lambda x,y: x*y),gridDimension))
-        exit(1)
+    if totalRuns != np.prod(gridDimension):
+        raise RuntimeError(
+            "Error: total runs (%d) in run file not equal to product of parameters(%d)." %
+            (totalRuns, np.prod(gridDimension)))
 
     # Read in data files.
     gridData = {}
     for q in range(totalRuns):
         mapFile = "%s_run%d.dat" % (prefix,(q+1))
-        indices = _get_grid_indices(gridDimension,q)
-        _loadMap(mapFile,gridDimension,indices,gridData, parameterValues, parameterNames)
+        indices = get_grid_indices(gridDimension,q)
+        loadMap(mapFile,gridDimension,indices,gridData, parameterValues, parameterNames)
 
     # Write out hdf5 file.
     output = h5py.File(outputFile,'w')
@@ -93,7 +104,7 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
 
     output.close()
 
-def _loadMap(mapFile,gridDimension,indices,gridData, parameterValues, parameterNames):
+def loadMap(mapFile,gridDimension,indices,gridData, parameterValues, parameterNames):
     "Read individual cooling map ascii file and fill data arrays."
 
     f = open(mapFile,'r')
@@ -123,16 +134,3 @@ def _loadMap(mapFile,gridDimension,indices,gridData, parameterValues, parameterN
 
     for i, field in enumerate(fields):
         gridData[field][tuple(indices)][:] = data[i+1]
-
-def _get_grid_indices(dims,index):
-    "Return indices with shape of dims corresponding to scalar index."
-    indices = []
-    dims.reverse()
-    for dim in dims:
-        indices.append(index % dim)
-        index -= indices[-1]
-        index /= dim
-
-    dims.reverse()
-    indices.reverse()
-    return indices
