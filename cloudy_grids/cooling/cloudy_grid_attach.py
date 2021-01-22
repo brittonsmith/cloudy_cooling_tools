@@ -5,12 +5,12 @@ Routine for grafting together cooling datasets of different dimension.
 """
 
 import h5py
-import numpy as na
-from hdf5_attributes import *
+import numpy as np
+from cloudy_grids.utilities import get_attributes, write_attributes
 
-def graft_grid(input_lt,input_ht,outputFile,
-               data_fields=['Heating','Cooling','MMW'],
-               extra_field="metal free electron fraction"):
+def graft_cooling_tables(input_lt,input_ht,outputFile,
+                         data_fields=['Heating','Cooling','MMW'],
+                         extra_field="metal free electron fraction"):
     """
     Attach low temperature and high temperature cooling grids.  The high 
     temperature grid will have one less dimension than the low temperature 
@@ -26,7 +26,7 @@ def graft_grid(input_lt,input_ht,outputFile,
     data_lt = {}
 
     input = h5py.File(input_lt,'r')
-    print "Reading file: %s." % input_lt
+    print ("Reading file: %s." % input_lt)
     for dataset in input.listnames():
         data_lt[dataset] = input[dataset].value
     attributes_lt = get_attributes(input)
@@ -37,7 +37,7 @@ def graft_grid(input_lt,input_ht,outputFile,
         if attributes_lt[name]["Name"]['value'] == extra_field:
             extra_dim = dim
     if extra_dim < 0:
-        print "Field, %s, not found in %s." % (extra_field,input_lt)
+        print ("Field, %s, not found in %s." % (extra_field,input_lt))
         return None
 
     # Open high temperature data and create duplicate data in 
@@ -45,17 +45,17 @@ def graft_grid(input_lt,input_ht,outputFile,
 
     data_ht = {}
     input = h5py.File(input_ht,'r')
-    print "Reading file: %s." % input_ht
+    print ("Reading file: %s." % input_ht)
     for dataset in input.listnames():
         data_ht[dataset] = input[dataset].value
     attributes_ht = get_attributes(input)
     input.close()
 
-    print "Combining datasets."
+    print ("Combining datasets.")
 
     data_ht_new = {}
     for dataset in data_fields:
-        data_ht_new[dataset] = _add_grid_dimension(data_ht[dataset],extra_dim,
+        data_ht_new[dataset] = add_grid_dimension(data_ht[dataset],extra_dim,
                                                   (data_lt[dataset].shape)[extra_dim])
 
     # Remove redundant temperature point.
@@ -64,9 +64,9 @@ def graft_grid(input_lt,input_ht,outputFile,
         redundant_point = True
 
     if redundant_point:
-        data_lt['Temperature'] = na.concatenate((data_lt['Temperature'],data_ht['Temperature'][1:]))
+        data_lt['Temperature'] = np.concatenate((data_lt['Temperature'],data_ht['Temperature'][1:]))
     else:
-        data_lt['Temperature'] = na.concatenate((data_lt['Temperature'],data_ht['Temperature']))
+        data_lt['Temperature'] = np.concatenate((data_lt['Temperature'],data_ht['Temperature']))
 
     attributes_lt['Temperature']["Dimension"]['value'][0] = data_lt['Temperature'].size
     del data_ht
@@ -79,23 +79,23 @@ def graft_grid(input_lt,input_ht,outputFile,
     for dataset in data_fields:
         if redundant_point:
             data_ht_copy = data_ht_new[dataset]
-            data_ht_copy = na.rollaxis(data_ht_copy,(len(data_ht_copy.shape)-1),0)
+            data_ht_copy = np.rollaxis(data_ht_copy,(len(data_ht_copy.shape)-1),0)
             data_ht_copy = data_ht_copy[1:]
-            data_ht_copy = na.rollaxis(data_ht_copy,0,len(data_ht_copy.shape))
+            data_ht_copy = np.rollaxis(data_ht_copy,0,len(data_ht_copy.shape))
         else:
             data_ht_copy = data_ht_new[dataset]
 
-        data_lt[dataset] = na.concatenate((data_lt[dataset],data_ht_copy),axis=-1)
+        data_lt[dataset] = np.concatenate((data_lt[dataset],data_ht_copy),axis=-1)
 
     # Write new dataset.
-    print "Writing file: %s." % outputFile
+    print ("Writing file: %s." % outputFile)
     output = h5py.File(outputFile,'w')
     for dataset in data_lt.keys():
         output.create_dataset(dataset,data=data_lt[dataset])
     write_attributes(output,attributes_lt)
     output.close()
 
-def _add_grid_dimension(grid,dimension,size):
+def add_grid_dimension(grid,dimension,size):
     "Add a dimension to the grid with duplicate data."
 
     oldShape = grid.shape
@@ -105,10 +105,10 @@ def _add_grid_dimension(grid,dimension,size):
     newShape.append(size)
     newShape.reverse()
 
-    newGrid = na.zeros(newShape,dtype=grid.dtype)
+    newGrid = np.zeros(newShape,dtype=grid.dtype)
     newGrid[:] = grid
 
     if dimension > 0:
-        newGrid = na.rollaxis(newGrid,0,dimension+1)
+        newGrid = np.rollaxis(newGrid,0,dimension+1)
 
     return newGrid
