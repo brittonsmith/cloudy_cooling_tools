@@ -1,8 +1,0 @@
-These are tools to help convert the ascii Cloudy data into hdf5.
-
-Required python modules:
-    h5py
-    numpy
-
-For a list of available functions, type:
-    python frontends.py
