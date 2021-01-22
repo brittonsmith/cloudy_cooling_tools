@@ -25,7 +25,7 @@ def convert_line_tables(runFile,outputFile):
     Examples
     --------
 
-    >>> from cloudy_grids import convert_emissivity_tables
+    >>> from cloudy_grids import convert_line_tables
     >>> convert_line_tables("line/line.run", "line.h5")
 
     """

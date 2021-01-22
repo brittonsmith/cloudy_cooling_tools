@@ -1,27 +1,38 @@
-"""
-Britton Smith <brittonsmith@gmail.com>
-
-Routine for converting ascii Cloudy cooling data to hdf5.
-"""
-
 import h5py
-import numpy as na
+import numpy as np
 import re
 import copy
+
+from cloudy_grids.utilities import get_grid_indices
 
 floatType = '>f8'
 intType = '>i8'
 
-def cloudyGrid_ascii2hdf5(runFile,outputFile):
-    "Convert Cloudy cooling ascii data into hdf5."
+def convert_cooling_tables(runFile,outputFile):
+    """
+    Convert ascii cooling tables to hdf5.
 
-    print "Converting %s to %s." % (runFile,outputFile)
+    Parameters
+    ----------
+    run_file : string
+        Path to the input file ending in .run.
+    output_file : string
+        HDF5 output file name.
+
+    Examples
+    --------
+
+    >>> from cloudy_grids import convert_cooling_tables
+    >>> convert_cooling_tables("cooling/cooling.run", "cooling.h5")
+
+    """
+
+    print ("Converting %s to %s." % (runFile,outputFile))
 
     if runFile[-4:] == '.run':
         prefix = runFile[0:-4]
     else:
-        print "Run file needs to end in .run."
-        exit(1)
+        raise RuntimeError("Run file needs to end in .run.")
 
     f = open(runFile,'r')
     lines = f.readlines()
@@ -46,7 +57,7 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
                 getParameterValues = False
             else:
                 (par,values) = line.split(': ')
-                floatValues = map(float,values.split())
+                floatValues = [float(val) for val in values.split()]
                 parameterValues.append(floatValues)
                 parameterNames.append(par[2:])
         elif getRunValues:
@@ -60,17 +71,17 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
 
     # Check file line number against product of parameter numbers.
     gridDimension = [len(q) for q in parameterValues]
-    if totalRuns != reduce((lambda x,y: x*y),gridDimension):
-        print "Error: total runs (%d) in run file not equal to product of parameters(%d)." % \
-        (totalRuns,reduce((lambda x,y: x*y),gridDimension))
-        exit(1)
+    if totalRuns != np.prod(gridDimension):
+        raise RuntimeError(
+            "Error: total runs (%d) in run file not equal to product of parameters(%d)." %
+            (totalRuns, np.prog(gridDimension)))
 
     # Read in data files.
     gridData = []
     for q in range(totalRuns):
         mapFile = "%s_run%d.dat" % (prefix,(q+1))
-        indices = _get_grid_indices(gridDimension,q)
-        _loadMap(mapFile,gridDimension,indices,gridData)
+        indices = get_grid_indices(gridDimension,q)
+        loadMap(mapFile,gridDimension,indices,gridData)
 
     # Write out hdf5 file.
     output = h5py.File(outputFile,'w')
@@ -79,20 +90,20 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
     names = ["Temperature","Heating","Cooling","MMW"]
     for q in range(len(gridData)):
         dataset = output.create_dataset(names[q],data=gridData[q],dtype=floatType)
-        dataset.attrs["Dimension"] = na.array(gridData[q].shape,dtype=intType)
-        dataset.attrs["Rank"] = na.array(len(gridData[q].shape),dtype=intType)
+        dataset.attrs["Dimension"] = np.array(gridData[q].shape,dtype=intType)
+        dataset.attrs["Rank"] = np.array(len(gridData[q].shape),dtype=intType)
 
     # Write loop parameter values.
     for q,values in enumerate(parameterValues):
-        values = na.array(values,dtype=float)
+        values = np.array(values,dtype=float)
         name = "Parameter%d" % (q+1)
         dataset = output.create_dataset(name,data=values,dtype=floatType)
-        dataset.attrs["Dimension"] = na.array(values.shape,dtype=intType)
+        dataset.attrs["Dimension"] = np.array(values.shape,dtype=intType)
         dataset.attrs["Name"] = parameterNames[q]
 
     output.close()
 
-def _loadMap(mapFile,gridDimension,indices,gridData):
+def loadMap(mapFile,gridDimension,indices,gridData):
     "Read individual cooling map ascii file and fill data arrays."
 
     f = open(mapFile,'r')
@@ -116,24 +127,11 @@ def _loadMap(mapFile,gridDimension,indices,gridData):
     if len(gridData) == 0:
         myDims = copy.deepcopy(gridDimension)
         myDims.append(len(t))
-        gridData.append(na.array(t))
-        gridData.append(na.zeros(shape=myDims))
-        gridData.append(na.zeros(shape=myDims))
-        gridData.append(na.zeros(shape=myDims))
+        gridData.append(np.array(t))
+        gridData.append(np.zeros(shape=myDims))
+        gridData.append(np.zeros(shape=myDims))
+        gridData.append(np.zeros(shape=myDims))
 
     gridData[1][tuple(indices)][:] = h
     gridData[2][tuple(indices)][:] = c
     gridData[3][tuple(indices)][:] = m
-
-def _get_grid_indices(dims,index):
-    "Return indices with shape of dims corresponding to scalar index."
-    indices = []
-    dims.reverse()
-    for dim in dims:
-        indices.append(index % dim)
-        index -= indices[-1]
-        index /= dim
-
-    dims.reverse()
-    indices.reverse()
-    return indices
