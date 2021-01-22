@@ -12,6 +12,9 @@ import copy
 floatType = '>f8'
 intType = '>i8'
 
+field_dict = {"hden": "log_nH",
+              "log_T": "log_T"}
+
 def cloudyGrid_ascii2hdf5(runFile,outputFile):
     "Convert Cloudy cooling ascii data into hdf5."
 
@@ -70,26 +73,27 @@ def cloudyGrid_ascii2hdf5(runFile,outputFile):
     for q in range(totalRuns):
         mapFile = "%s_run%d.dat" % (prefix,(q+1))
         indices = _get_grid_indices(gridDimension,q)
-        _loadMap(mapFile,gridDimension,indices,gridData)
+        _loadMap(mapFile,gridDimension,indices,gridData, parameterValues, parameterNames)
 
     # Write out hdf5 file.
     output = h5py.File(outputFile,'w')
     
     # Write data.
     for field in gridData:
-        dataset = output.create_dataset(field, data=gridData[field], dtype=floatType)
+        group = output.create_group(field)
+        dataset = group.create_dataset("emissivity", data=gridData[field], dtype=floatType)
+        dataset.attrs["units"] = "erg * s**(-1) * cm**(3)"
 
-    # Write loop parameter values.
-    for q,values in enumerate(parameterValues):
-        values = np.array(values,dtype=float)
-        name = "Parameter%d" % (q+1)
-        dataset = output.create_dataset(name,data=values,dtype=floatType)
-        dataset.attrs["Dimension"] = np.array(values.shape,dtype=intType)
-        dataset.attrs["Name"] = parameterNames[q]
+        # Write loop parameter values.
+        for q,values in enumerate(parameterValues):
+            values = np.array(values,dtype=float)
+            name = field_dict[parameterNames[q]]
+            dataset = group.create_dataset(name,data=values,dtype=floatType)
+            dataset.attrs["units"] = ""
 
     output.close()
 
-def _loadMap(mapFile,gridDimension,indices,gridData):
+def _loadMap(mapFile,gridDimension,indices,gridData, parameterValues, parameterNames):
     "Read individual cooling map ascii file and fill data arrays."
 
     f = open(mapFile,'r')
@@ -114,7 +118,8 @@ def _loadMap(mapFile,gridDimension,indices,gridData):
 
         for field in fields:
             gridData[field] = np.zeros(shape=myDims)
-        gridData['Temperature'] = data[0]
+        parameterNames.append("log_T")
+        parameterValues.append(data[0])
 
     for i, field in enumerate(fields):
         gridData[field][tuple(indices)][:] = data[i+1]
