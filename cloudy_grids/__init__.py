@@ -1,6 +1,6 @@
 __version__ = "1.0"
 
-from cloudy_grids.cooling import \
+from .cooling_tables import \
      convert_cooling_tables, \
      graft_cooling_tables, \
      zero_dataset
