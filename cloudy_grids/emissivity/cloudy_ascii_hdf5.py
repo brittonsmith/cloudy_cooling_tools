@@ -1,22 +1,40 @@
 import h5py
-import numpy as na
+import numpy as np
 import re
 import copy
+
+from cloudy_grids.utilities import get_grid_indices
 
 floatType = '>f8'
 intType = '>i8'
 
 par_names = {'Parameter1': 'log_nH'}
 
-def cloudyGrid_ascii2hdf5(runFile, outputFile):
-    "Convert Cloudy ion fraction ascii data into hdf5."
+def convert_emissivity_tables(runFile, outputFile):
+    """
+    Convert ascii emissivity tables to hdf5.
 
-    print "Converting from %s to %s." % (runFile, outputFile)
+    Parameters
+    ----------
+    run_file : string
+        Path to the input file ending in .run.
+    output_file : string
+        HDF5 output file name.
+
+    Examples
+    --------
+
+    >>> from cloudy_grids import convert_emissivity_tables
+    >>> convert_emissivity_tables("emissivity/emissivity.run", "emissivity.h5")
+
+    """
+
+    print ("Converting from %s to %s." % (runFile, outputFile))
 
     if runFile[-4:] == '.run':
         prefix = runFile[0:-4]
     else:
-        print "Run file needs to end in .run."
+        print ("Run file needs to end in .run.")
         exit(1)
 
     f = open(runFile,'r')
@@ -42,7 +60,12 @@ def cloudyGrid_ascii2hdf5(runFile, outputFile):
                 getParameterValues = False
             else:
                 (par,values) = line.split(': ')
-                floatValues = map(float,values.split())
+                if values.count(';') == 2 and \
+                  values.startswith('(') and values.endswith(')'):
+                    fs, fe, fi = [float(v) for v in values[1:-1].split(';')]
+                    floatValues = np.arange(fs, fe+fi/2, fi)
+                else:
+                    floatValues = [float(val) for val in values.split()]
                 parameterValues.append(floatValues)
                 parameterNames.append(par[2:])
         elif getRunValues:
@@ -56,10 +79,10 @@ def cloudyGrid_ascii2hdf5(runFile, outputFile):
 
     # Check file line number against product of parameter numbers.
     gridDimension = [len(q) for q in parameterValues]
-    if totalRuns != reduce((lambda x,y: x*y),gridDimension):
-        print "Error: total runs (%d) in run file not equal to product of parameters(%d)." % \
-        (totalRuns,reduce((lambda x,y: x*y),gridDimension))
-        exit(1)
+    if totalRuns != np.prod(gridDimension):
+        raise RuntimeError(
+            "Error: total runs (%d) in run file not equal to product of parameters(%d)." % 
+            (totalRuns, np.prod(gridDimension)))
 
     # Read in data files.
     gridData = []
@@ -68,8 +91,10 @@ def cloudyGrid_ascii2hdf5(runFile, outputFile):
         indices = get_grid_indices(gridDimension,q)
         loadMap(mapFile,gridDimension,indices,gridData)
 
+    ienergy = parameterNames.index("energy")
+    energy = parameterValues.pop(ienergy)
+
     temperature = gridData.pop(0)
-    energy = gridData.pop(0)
     emissivity = gridData.pop(0)
 
     # Write out hdf5 file.
@@ -79,16 +104,16 @@ def cloudyGrid_ascii2hdf5(runFile, outputFile):
     dataset = "Emissivity"
     output.create_dataset(dataset, data=emissivity,dtype=floatType)
     output[dataset].attrs['log_T'] = \
-      na.log10(temperature, dtype=floatType)
+      np.log10(temperature, dtype=floatType)
     output[dataset].attrs['log_E'] = \
-      na.log10(energy, dtype=floatType)
+      np.log10(energy, dtype=floatType)
 
     # Write loop parameter values.
     for q,values in enumerate(parameterValues):
         name = "Parameter%d" % (q+1)
         if name in par_names:
             name = par_names[name]
-        output[dataset].attrs[name] = na.array(values, dtype=floatType)
+        output[dataset].attrs[name] = np.array(values, dtype=floatType)
 
     output.close()
 
@@ -100,39 +125,21 @@ def loadMap(mapFile,gridDimension,indices,gridData):
     f.close()
 
     t = []
-    energy = []
     emissivity = []
 
     for line in lines:
         line.strip()
-        if line.startswith("#E [keV]"):
-            online = line.split()
-            energy = map(float, online[2:])
-        elif not line.startswith("#"):
+        if not line.startswith("#"):
             onLine = line.split()
             t.append(float(onLine.pop(0)))
-            emissivity.append(map(float, onLine))
+            emissivity.append([float(val) for val in onLine])
 
-    emissivity = na.array(emissivity)
+    emissivity = np.squeeze(emissivity)
     
     if len(gridData) == 0:
         myDims = copy.deepcopy(gridDimension)
         myDims.extend(emissivity.shape)
-        gridData.append(na.array(t))
-        gridData.append(na.array(energy))
-        gridData.append(na.zeros(shape=myDims))
+        gridData.append(np.array(t))
+        gridData.append(np.zeros(shape=myDims))
 
-    gridData[2][tuple(indices)][:] = emissivity
-
-def get_grid_indices(dims,index):
-    "Return indices with shape of dims corresponding to scalar index."
-    indices = []
-    dims.reverse()
-    for dim in dims:
-        indices.append(index % dim)
-        index -= indices[-1]
-        index /= dim
-
-    dims.reverse()
-    indices.reverse()
-    return indices
+    gridData[-1][tuple(indices)][:] = emissivity
