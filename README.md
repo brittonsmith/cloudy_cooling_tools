@@ -71,20 +71,24 @@ run file, and restart the last map on the list.
 To run on more than one node, you need to specify a machine file.
 Example machine file:
 
+```
 machine1:1
 machine1:1
 machine2:1
 machine2:1
+```
 
 See the note below for running batch jobs on distributed memory systems.
 
 ### Changing the precision of the cooling maps.
 
-Change the values of the variables: 
+Change the values of the variables:
+```
 $temperaturePrecision (Line 189)
 $heatingPrecision (Line 192)
 $coolingPrecision (Line 195)
 $mmwPrecision (Line 198)
+```
 
 ### Note on Cloudy versions.
 
