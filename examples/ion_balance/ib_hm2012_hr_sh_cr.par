@@ -1,0 +1,82 @@
+###########################################################
+############# ion fraction map parameter file #############
+###########################################################
+
+###########################################################
+##################### Run parameters ######################
+
+# path to Cloudy executable
+cloudyExe               = /home/brs/ion_balance/cloudy.exe
+
+# don't save raw output from Cloudy
+saveCloudyOutputFiles   = 0
+
+# save minimum output files (make ion tables later)
+saveMinimumOutputFiles  = 0
+
+# exit if Cloudy crashes
+exitOnCrash             = 0
+
+# give this run a name
+outputFilePrefix        = ib_hm2012_hr_sh_cr
+
+# output directory
+outputDir               = /home/brs/ion_balance/ib_hm2012_hr_sh_cr
+
+# index of first run
+runStartIndex           = 1
+
+# this is not a test
+test                    = 0
+
+# select a run mode
+cloudyRunMode           = 3 # ion balance mode
+
+############################################################
+############### IonFraction Map Parameters #################
+
+# minimum temperature
+coolingMapTmin = 1e1
+
+# maximum temperature
+coolingMapTmax = 1e9
+
+# number of steps (log space)
+coolingMapTpoints = 321
+
+# linear temperature step size
+#coolingMapdT (currently redundant)
+
+# log temperature step size
+#coolingMapdLogT (currently redundant)
+
+# Attenuate radiation field on Jeans length scale
+coolingMapUseJeansLength = 1
+
+# maximum length 100 pc
+coolingMapMaximumJeansLength = 3.086e20
+
+# elements for ion fraction tables
+ionFractionElements = H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn
+
+############################################################
+############ Commands to be executed every time ############
+
+command stop temperature 9.99 linear
+command stop optical depth 10 linear at 1.0 Ryd
+
+# command failures 200 times map
+command iterate to convergence max=4 error=0.20
+
+command cosmic rays background 0.1 linear
+
+command metal 0 log
+
+#######################################################
+############# Commands to be looped over ##############
+
+# only go up to log (nH) = 2 and do the rest optically thin
+# loop [hden] (-9;4;0.125)
+loop [hden] (-9;2;0.125)
+
+loop [init "/home/brs/ion_balance/hm/HM11_UVB/z_*.out"] 0.0000e+00 1.2202e-01 2.5893e-01 4.1254e-01 5.8489e-01 7.7828e-01 9.9526e-01 1.2387e+00 1.5119e+00 1.8184e+00 2.1623e+00 2.5481e+00 2.9811e+00 3.4668e+00 4.0119e+00 4.6234e+00 5.3096e+00 6.0795e+00 6.9433e+00 7.9125e+00 9.0000e+00 1.0220e+01 1.1589e+01 1.3125e+01 1.4849e+01
