@@ -1,0 +1,86 @@
+###########################################################
+################ Santa Cruz Galaxy Project ################
+###########################################################
+
+###########################################################
+##################### Run parameters ######################
+
+# path to Cloudy executable
+cloudyExe               = /Users/britton/Documents/work/cooling/coolingCodes/cLoop/cloudy_exe/cloudy10_-13.exe
+
+# don't save raw output from Cloudy
+saveCloudyOutputFiles   = 1
+
+# exit if Cloudy crashes
+exitOnCrash             = 1
+
+# give this run a name
+outputFilePrefix        = fg_2011_mf
+
+# output directory
+outputDir               = /Users/britton/Documents/work/cooling/coolingCodes/cLoop/fg_2011_mf
+
+# index of first run
+runStartIndex           = 1
+
+# this is not a test
+test                    = 0
+
+# select a run mode
+cloudyRunMode           = 1 # cooling map mode
+
+# Current Run Mode Options
+# 0: Bare Mode - just run Cloudy with no data processing
+# 1: Cooling Map Mode - create maps of heating and cooling vs. Te
+
+############################################################
+################# Cooling Map Parameters ###################
+
+# minimum temperature
+coolingMapTmin = 1e1
+
+# maximum temperature
+coolingMapTmax = 1e9
+
+# number of steps (log space)
+coolingMapTpoints = 161
+
+# linear temperature step size
+#coolingMapdT (currently redundant)
+
+# log temperature step size
+#coolingMapdLogT (currently redundant)
+
+# scale factor for cooling/heating
+# 1: n_H^2
+# 2: n_H * n_e
+coolingScaleFactor = 1
+
+############################################################
+############ Commands to be executed every time ############
+
+command stop zone 1
+
+command iterate to convergence
+
+# this command requires a temperature argument in Cloudy
+# here no, because we will run it in a loop
+# cLoop will take care of that
+# command coronal equilibrium
+
+command set WeakHeatCool -20
+
+# turn off H2 molecule
+command no H2 molecule
+
+command no charge transfer
+
+command metals 0
+file metal_free.dat
+
+#######################################################
+############# Commands to be looped over ##############
+
+loop [hden] (-10;4;0.5)
+
+loop [init "FG11_UVB/z_*.out"] 0.0000e+00 1.2202e-01 2.5893e-01 4.1254e-01 5.8489e-01 7.7828e-01 9.9526e-01 1.2387e+00 1.5119e+00 1.8184e+00 2.1623e+00 2.5481e+00 2.9811e+00 3.4668e+00 4.0119e+00 4.6234e+00 5.3096e+00 6.0795e+00 6.9433e+00 7.9125e+00 9.0000e+00 1.0220e+01
