@@ -40,6 +40,8 @@ Scripts:
   with no argument for usage.
 * subtract_cooling_lite.pl - same as subtract_cooling.pl, except uses
   less ram and may be slightly slower.  USE THIS ONE.
+* make_cloudy_input.py - an example script for computing CUBA spectra
+  (e.g., Haardt & Madau 2012 or Puchwein et al 2019) into Cloudy format.
 
 Examples:
 
