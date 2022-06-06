@@ -114,8 +114,8 @@ scripts to help out with that, depending on the resource manager used.
                             to determine allocated nodes and construct the machine
                             file "machines.dat" for use with CIAOLoop. Note
                             that the SLURM option `--ntasks-per-node` must
-                            be specified for `SLURM_NTASKS_PER_NODE`, **even**
-                            if using the default.
+                            be specified for `SLURM_NTASKS_PER_NODE` to be defined,
+                            **even** if using the default.
 * slurm_template.sh - a skeleton SLURM submission script demonstrating the use
                       of the above script.
   
