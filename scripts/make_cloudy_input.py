@@ -11,8 +11,26 @@ data = np.genfromtxt(fname, skip_header=11)
 
 Ryd = 2.1798723611035e-18 * u.J
 wave = data[:, 0] * u.Angstrom
-nu = wave.to("J", equivalence="spectral") / Ryd
 
+# The table likely contains duplicate entries for the Lyman series
+# One entry is just redward, and the other is just blueward
+# Shift both entries slightly
+# Indicies of duplicates based on https://stackoverflow.com/a/25265385
+
+unq_wv, freq = np.unique(wave, return_counts=True)
+pairs = [(wave == val).nonzero()[0] for val in unq_wv[freq>1]] # list of arrays w/ indicies
+
+for pair in pairs:
+    assert pair.size==2, "More than two duplicates found"
+    assert pair[0] < pair[1]
+
+    # adjust wavelenghts by 0.01%
+    wave[pair[0]] -= 0.0001 * wave[pair[0]]
+    wave[pair[1]] += 0.0001 * wave[pair[1]]
+
+nu = wave.to("J", equivalence="spectral") / Ryd
+    
+# Set the lowest and highest frequencies Cloudy expects to negligible flux
 lJ_pad = -50
 
 for iz, z in enumerate(zs):
