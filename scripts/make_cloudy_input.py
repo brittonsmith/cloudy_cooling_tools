@@ -46,13 +46,13 @@ for iz, z in enumerate(zs):
         f.write("# E [Ryd] log (J_nu)\n")
 
         f.write(f"interpolate ({1e-8:.10f}) ({lJ_pad:.10f})\n")
-        f.write(f"continue ({nu[-1]*0.99:.10f}) ({lJ_pad:.10f})\n")
+        f.write(f"continue ({nu[-1].value*0.99:.10f}) ({lJ_pad:.10f})\n")
 
         # loop backwards through wavelengths so that lowest energy is first
         for i in range(nu.size-1, -1, -1):
-            f.write(f"continue ({nu[i]:.10f}) ({spec[i]:.10f})\n")
+            f.write(f"continue ({nu[i].value:.10f}) ({spec[i]:.10f})\n")
 
-        f.write(f"continue ({nu[0]*1.01:.10f}) ({lJ_pad:.10f})\n")
+        f.write(f"continue ({nu[0].value*1.01:.10f}) ({lJ_pad:.10f})\n")
         f.write(f"continue ({7.354e6:.10f}) ({lJ_pad:.10f})\n")
 
         x = 10**interp(1)
