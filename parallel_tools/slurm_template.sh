@@ -1,3 +1,4 @@
+#!/bin/sh
 # A template SLURM script for running CIAOLoop jobs in parallel
 
 #SBATCH -N <num nodes>
