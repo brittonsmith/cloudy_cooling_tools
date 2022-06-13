@@ -28,17 +28,18 @@ for pair in pairs:
     wave[pair[0]] -= 0.0001 * wave[pair[0]]
     wave[pair[1]] += 0.0001 * wave[pair[1]]
 
-nu = wave.to("J", equivalence="spectral") / Ryd
+energy = wave.to("J", equivalence="spectral") / Ryd
     
 # Set the lowest and highest frequencies Cloudy expects to negligible flux
 lJ_pad = -50
 
 for iz, z in enumerate(zs):
 
+    
     fname = f"z_{z:.4e}.out"
     spec = np.log10(data[:, iz+1])
 
-    interp = interp1d(nu, spec)
+    interp = interp1d(energy, spec)
 
     with open(fname, "w") as f:
         f.write(f"# {source}\n")
@@ -46,13 +47,13 @@ for iz, z in enumerate(zs):
         f.write("# E [Ryd] log (J_nu)\n")
 
         f.write(f"interpolate ({1e-8:.10f}) ({lJ_pad:.10f})\n")
-        f.write(f"continue ({nu[-1].value*0.99:.10f}) ({lJ_pad:.10f})\n")
+        f.write(f"continue ({energy[-1].value*0.99:.10f}) ({lJ_pad:.10f})\n")
 
         # loop backwards through wavelengths so that lowest energy is first
-        for i in range(nu.size-1, -1, -1):
-            f.write(f"continue ({nu[i].value:.10f}) ({spec[i]:.10f})\n")
+        for i in range(energy.size-1, -1, -1):
+            f.write(f"continue ({energy[i].value:.10f}) ({spec[i]:.10f})\n")
 
-        f.write(f"continue ({nu[0].value*1.01:.10f}) ({lJ_pad:.10f})\n")
+        f.write(f"continue ({energy[0].value*1.01:.10f}) ({lJ_pad:.10f})\n")
         f.write(f"continue ({7.354e6:.10f}) ({lJ_pad:.10f})\n")
 
         x = 10**interp(1)
