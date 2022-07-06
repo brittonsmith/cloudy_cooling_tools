@@ -604,6 +604,21 @@ sub readParameterFile {
 	  undef $value;
       }
 
+      # get output directory
+      elsif ($line =~ /^outputDir(\z|[\s\=])/i) {
+	  my (undef,$value) = split /=/, $line, 2;
+	  (undef,$value) = split " ", $line, 2 unless (defined($value));
+	  $value =~ s/^\s+//;
+	  die "No output directory given on line $lineNumber of $parameterFile.\n"
+	      unless ($value);
+	  $value =~ s/\s/\_/g;
+	  ($outputDir) = glob($value);
+	  undef $value;
+
+	  mkdir $outputDir, 0755 or die "Couldn't create directory: $outputDir.\n" unless (-d $outputDir);
+	  $outputDir .= "/" unless ($outputDir =~ /\/$/);
+      }
+
       # get cloudy run mode
       elsif ($line =~ /^cloudyRunMode(\z|[\s\=])/) {
 	  my (undef,$value) = split /=/, $line, 2;
