@@ -98,33 +98,37 @@ def rearrange_attrs(data):
             del data.data[field]
             
 if __name__ == "__main__":
+    if (len(sys.argv) < 4):
+        print("Usage: python grackle_prepare.py [uvb_file] [no_uvb_file] [output_file]")
+        exit(1)
+    
     uvb_file = sys.argv[1]
     no_uvb_file = sys.argv[2]
     output_file = sys.argv[3]
 
-    print "Reading %s." % uvb_file
+    print("Reading %s." % uvb_file)
     uvb_data = H5InMemory(uvb_file)
 
     # Rename Parameter2 Name attribute
-    print "Changing Parameter2 attribute Name from %s to redshift." % \
-      uvb_data["Parameter2"].attrs["Name"]
+    print("Changing Parameter2 attribute Name from %s to redshift." % \
+      uvb_data["Parameter2"].attrs["Name"])
     uvb_data["Parameter2"].attrs["Name"] = "redshift"
     
     # Rearrange attributes
-    print "Rearranging attributes."
+    print("Rearranging attributes.")
     rearrange_attrs(uvb_data)
 
-    print "Reading %s." % no_uvb_file
+    print("Reading %s." % no_uvb_file)
     no_uvb_data = H5InMemory(no_uvb_file)
 
     # Zero out heating values for no_uvb data
-    print "Zeroing heating values for no_uvb data."
+    print("Zeroing heating values for no_uvb data.")
     no_uvb_data["Heating"].value[:] = 0.0
 
     # Graft no_uvb data onto uvb_data
-    print "Grafting no_uvb data onto uvb_data."
+    print("Grafting no_uvb data onto uvb_data.")
     for field in ["Cooling", "Heating"]:
-        print "Grafting %s." % field
+        print("Grafting %s." % field)
         new_data = np.concatenate([np.rollaxis(uvb_data[field].value, 1),
                                    [no_uvb_data[field].value]])
         new_data = np.rollaxis(new_data, 1)
@@ -137,12 +141,12 @@ if __name__ == "__main__":
 
     # Scale data to correspond to Z = Zsun.
     scale_factor = 1000.
-    print "Scaling data by %f." % scale_factor
+    print("Scaling data by %f." % scale_factor)
     for field in ["Cooling", "Heating"]:
         uvb_data[field].value *= scale_factor
 
     # Move datasets into group "CoolingRates/Metals"
-    print "Moving datasets into correct groups."
+    print("Moving datasets into correct groups.")
     uvb_data.data["CoolingRates"] = H5InMemory({})
     uvb_data["CoolingRates"].data["Metals"] = H5InMemory({})
     for field in ["Cooling", "Heating"]:
@@ -150,5 +154,5 @@ if __name__ == "__main__":
         del uvb_data.data[field]
 
     # Write out new data.
-    print "Saving new dataset as %s." % output_file
+    print("Saving new dataset as %s." % output_file)
     uvb_data.save(output_file)
