@@ -1458,6 +1458,7 @@ sub runCloudy {
 	}
     }
     else {
+    print $ENV{'SLURM_NODENAME'};
 	system("$cloudyExe < $inputFile > $outputFile");
     }
 

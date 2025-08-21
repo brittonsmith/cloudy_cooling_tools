@@ -110,8 +110,10 @@ def loadMap(mapFile,gridDimension,indices,gridData):
         myDims.extend(ion_fraction.shape)
         gridData.append(np.array(t))
         gridData.append(np.zeros(shape=myDims))
-
-    gridData[1][tuple(indices)][:] = ion_fraction
+    try:
+        gridData[1][tuple(indices)][:] = ion_fraction
+    except ValueError:
+        print(ion_fraction.shape)
 
 def convert_ion_balance_tables(run_file, output_file, elements):
     """
