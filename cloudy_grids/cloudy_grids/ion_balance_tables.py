@@ -113,7 +113,8 @@ def loadMap(mapFile,gridDimension,indices,gridData):
     try:
         gridData[1][tuple(indices)][:] = ion_fraction
     except ValueError:
-        print(ion_fraction.shape)
+        print(f"There was a problem with adding fraction table "
+              f"of shape {ion_fraction.shape} to indices f{tuple(indices)} ")
 
 def convert_ion_balance_tables(run_file, output_file, elements):
     """

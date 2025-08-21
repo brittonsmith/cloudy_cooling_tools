@@ -2,8 +2,6 @@
 
 $machineFile = "machines.dat";
 
-
-
 @nodes = getJobNodes($ENV{'SLURM_NODELIST'});
 $ppn = $ENV{'SLURM_NTASKS_PER_NODE'};
 
