@@ -40,6 +40,8 @@ Scripts:
   with no argument for usage.
 * subtract_cooling_lite.pl - same as subtract_cooling.pl, except uses
   less ram and may be slightly slower.  USE THIS ONE.
+* make_cloudy_input.py - an example script for converting CUBA spectra
+  (e.g., Haardt & Madau 2012 or Puchwein et al 2019) into Cloudy format.
 
 Examples:
 
@@ -99,13 +101,26 @@ out line 2020, and uncomment line 2006.  ROCO is currently set to work with
 versions 07 and later.
 
 ### Running on distributed systems
-
-Note, this is very old and probably doesn't work well anymore.
-
+  
 To run this in parallel on a distributed memory system, you will just 
 need to supply a machine file at run time that has the full list of 
 available nodes.  The parallel tools directory contains some crude 
-scripts to help out with that.
+scripts to help out with that, depending on the resource manager used.
+
+#### For SLURM Systems
+  
+* make_machine_list_slurm.pl - this will parse the environment variables
+                            `SLURM_NODELIST` and `SLURM_NTASKS_PER_NODE`
+                            to determine allocated nodes and construct the machine
+                            file "machines.dat" for use with CIAOLoop. Note
+                            that the SLURM option `--ntasks-per-node` must
+                            be specified for `SLURM_NTASKS_PER_NODE` to be defined,
+                            **even** if using the default.
+* slurm_template.sh - a skeleton SLURM submission script demonstrating the use
+                      of the above script.
+  
+  
+#### For PBS/Torque Systems (OLD)
 
 * make_machine_list.pl - this will read in the id of the job from a file 
                        called "job.dat" and will parse "qstat -f" to 
